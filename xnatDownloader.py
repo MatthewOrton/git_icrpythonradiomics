@@ -220,6 +220,8 @@ class xnatDownloader:
                         xnat_scan = self.xnat_session.projects[self.projectStr].experiments[xnat_labels[1]].scans[xnat_labels[2]]
 
                         beforeContents = os.listdir(refImageDownloadPath)
+                        # uri of xml file containing scan info
+                        # self.xnat_session._original_uri + xnat_scan.uri + '/files?format=xml'
                         xnat_scan.download_dir(refImageDownloadPath)
                         afterContents = os.listdir(refImageDownloadPath)
                         thisFolder = list(set(afterContents) - set(beforeContents))
