@@ -15,16 +15,25 @@ def myStrJoin(strList):
 def myStrSplit(str):
     return str.split('__II__')
 
-class xnatDownloadUtilities:
+class xnatDownloader:
 
     ##########################
-    def __init__(self, serverURL='', projectStr='', downloadPath='', assessorStyle='', removeSecondaryAndSnapshots=False):
+    def __init__(self,
+                 serverURL='',
+                 projectStr='',
+                 downloadPath='',
+                 assessorStyle='',
+                 removeSecondaryAndSnapshots=False,
+                 roiCollectionLabelFilter='',
+                 roiLabelFilter=None):
 
         self.serverURL = serverURL
         self.projectStr = projectStr
         self.downloadPath = downloadPath
         self.assessorStyle = assessorStyle
         self.removeSecondaryAndSnapshots = removeSecondaryAndSnapshots
+        self.roiCollectionLabelFilter = roiCollectionLabelFilter
+        self.roiLabelFilter = roiLabelFilter
         self.xnat_session = None
 
         print(' ')
@@ -182,7 +191,7 @@ class xnatDownloadUtilities:
 
 
     ##########################
-    def downloadImagesReferencedByAssessors(self, roiObjectLabel=None, keepEntireScan=False):
+    def downloadImagesReferencedByAssessors(self, keepEntireScan=False):
         # This method downloads the whole series referenced by the assessors then deletes any non-referenced images.
         # This is useful mainly to save HD space.
         # Files are named to indicate their contents, and are stored flat in the indicated download folder
@@ -195,9 +204,9 @@ class xnatDownloadUtilities:
         for assessorFile in assessorFiles:
             print('Downloading images referenced by ' + os.path.split(assessorFile)[1])
             xnat_labels = myStrSplit(os.path.split(assessorFile)[1])
-            references = self.__getReferencedUIDs(assessorFile, roiObjectLabel=roiObjectLabel)
+            references = self.__getReferencedUIDsAndLabels(assessorFile)
             if len(references["referencedSopInstances"])==0:
-                print('No roi objects found matching label "' + roiObjectLabel + '"')
+                print('No roi objects found matching label "' + self.roiLabelFilter + '"')
                 print(' ')
                 continue
             try:
@@ -315,10 +324,10 @@ class xnatDownloadUtilities:
                 # download and unzip
                 tempZip = os.path.join(self.downloadPath, 'temp.zip')
                 tempUnzip = os.path.join(self.downloadPath, 'tempUnzip')
-                os.mkdir(tempUnzip)
                 xnat_assessor.download(tempZip, verbose=False)
                 with zipfile.ZipFile(tempZip, 'r') as zip_ref:
                     zip_ref.extractall(tempUnzip)
+                os.remove(tempZip)
 
                 # file is buried in lots of folders
                 thisFile = glob.glob(os.path.join(tempUnzip, '**', '*.'+self.assessorStyle["format"].lower()), recursive=True) + \
@@ -329,49 +338,51 @@ class xnatDownloadUtilities:
                 if len(thisFile) == 0:
                     raise Exception("Cannot find .dcm or .xml file in downloaded assessor!")
 
+                references = self.__getReferencedUIDsAndLabels(thisFile[0])
+
                 # tidy up and skip if format doesn't match requested
                 thisExt = os.path.splitext(thisFile[0])[1]
-                if thisExt.lower() != '.'+self.assessorStyle["format"].lower():
+                if (thisExt.lower() != '.'+self.assessorStyle["format"].lower()) or (self.roiCollectionLabelFilter.lower() not in references["roiCollectionLabel"].lower()):
                     os.remove(thisFile[0])
-                    os.remove(tempZip)
                     rmtree(tempUnzip)
                     continue
 
                 print('      ' + xnat_assessor.label)
-                references = self.__getReferencedUIDs(thisFile[0])
+                print('        ' + references["roiCollectionLabel"])
+                references = self.__getReferencedUIDsAndLabels(thisFile[0])
                 scanID = scanDict[references["referencedSeriesUID"]].id
                 # move assessor file and rename it
                 if not os.path.exists(os.path.join(self.downloadPath, 'assessors')):
                     os.mkdir(os.path.join(self.downloadPath, 'assessors'))
                 assessorFileName = os.path.join(self.downloadPath, 'assessors', myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
                 os.rename(thisFile[0], assessorFileName)
-                os.remove(tempZip)
                 rmtree(tempUnzip)
         else:
             print('      ----- No Assessors found -----')
 
 
     ##########################
-    def __getReferencedUIDs(self, assessorFileName, roiObjectLabel=None):
+    def __getReferencedUIDsAndLabels(self, assessorFileName):
+
         if self.assessorStyle['format'].lower() == 'dcm':
-            references = self.__getReferencedUIDsDicom(assessorFileName)
+            references = self.__getReferencedUIDsAndLabelsDicom(assessorFileName)
+            
         elif self.assessorStyle['format'].lower() == 'xml':
-            references = self.__getReferencedUIDsAimXml(assessorFileName)
+            references = self.__getReferencedUIDsAndLabelsAimXml(assessorFileName)
+            
         # select segments matching segmentLabel input
-        if roiObjectLabel is not None:
-            indToKeep = [x["label"] == roiObjectLabel for x in references["referencedSopInstances"]]
+        if self.roiLabelFilter is not None:
+            indToKeep = [x["label"] == self.roiLabelFilter for x in references["referencedSopInstances"]]
             if not any(indToKeep):
                 references["referencedSopInstances"] = []
             else:
                 references["referencedSopInstances"] = list(compress(references["referencedSopInstances"], indToKeep))
-        else:
-            # if roiObjectLabel = None then print the roiObjectLabels we've found
-            print('         ' + str(set([x["label"] for x in references["referencedSopInstances"]])))
         return references
 
 
     ##########################
-    def __getReferencedUIDsDicom(self, assessorFileName):
+    def __getReferencedUIDsAndLabelsDicom(self, assessorFileName):
+
         dcm = pydicom.dcmread(assessorFileName)
         if dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.481.3':
             # Dicom RT
@@ -401,7 +412,9 @@ class xnatDownloadUtilities:
                     annotationObjectList.append(
                         {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
                          "label": label})
-            return {"referencedSeriesUID":rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID, "referencedSopInstances":annotationObjectList}
+            return {"referencedSeriesUID":rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID,
+                    "referencedSopInstances":annotationObjectList,
+                    "roiCollectionLabel": dcm.StructureSetLabel}
 
         elif dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
             # Segmentation Storage
@@ -423,18 +436,20 @@ class xnatDownloadUtilities:
                     {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[
                         0].ReferencedSOPInstanceUID,
                      "label": label})
-            return {"referencedSeriesUID":dcm.ReferencedSeriesSequence[0].SeriesInstanceUID, "referencedSopInstances":annotationObjectList}
+            return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID, 
+                    "referencedSopInstances": annotationObjectList,
+                    "roiCollectionLabel": dcm.SeriesDescription}
 
     ##########################
-    def __getReferencedUIDsAimXml(self, assessorFileName):
+    def __getReferencedUIDsAndLabelsAimXml(self, assessorFileName):
+        
         xDOM = minidom.parse(assessorFileName)
-        xImSer = xDOM.getElementsByTagName('imageSeries')
-        seriesUIDs = unique([x.getElementsByTagName('instanceUid').item(0).getAttribute('root') for x in xImSer])
 
-        if len(seriesUIDs) != 1:
-            raise Exception('AIM file referencing more than one series not supported!')
+        # assume only one series is referenced
+        self.ReferencedSeriesUID = xDOM.getElementsByTagName('imageSeries').item(0).getElementsByTagName('instanceUid').item(0).getAttribute('root')
 
-        self.ReferencedSeriesUID = str(seriesUIDs[0])
+        # get description node whose parent is an ImageAnnotationCollectionNode
+        description = [x for x in xDOM.getElementsByTagName('description') if x.parentNode.nodeName == "ImageAnnotationCollection"][0].getAttribute('value')
 
         annotationObjectList = []
         for xImAnn in xDOM.getElementsByTagName('ImageAnnotation'):
@@ -443,4 +458,6 @@ class xnatDownloadUtilities:
                 annotationObjectList.append({"ReferencedSOPInstanceUID": me.getElementsByTagName(
                     'imageReferenceUid').item(0).getAttribute('root'),
                                              "label": label})
-        return {"referencedSeriesUID": str(seriesUIDs[0]), "referencedSopInstances": annotationObjectList}
+        return {"referencedSeriesUID": self.ReferencedSeriesUID,
+                "referencedSopInstances": annotationObjectList,
+                "roiCollectionLabel": description}
