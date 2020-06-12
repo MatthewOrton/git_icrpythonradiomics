@@ -11,8 +11,12 @@ import SimpleITK as sitk
 import csv
 import yaml
 
+# add folder to path for radiomicsFeatureExtractorEnhanced
+import sys
+sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
+
 #from radiomics import featureextractor
-import featureextractorenhanced
+from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
@@ -58,7 +62,7 @@ class radiomicAnalyser:
         imageSitk.SetDirection(maskSitk.GetDirection())
 
         #extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
-        extractor = featureextractorenhanced.RadiomicsFeatureExtractorEnhanced(self.paramFileName)
+        extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         extractor.setVerbosity(40)
 
         segmentNumber = int(1)
