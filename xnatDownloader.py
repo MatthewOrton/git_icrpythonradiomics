@@ -36,6 +36,14 @@ class xnatDownloader:
         self.roiLabelFilter = roiLabelFilter
         self.xnat_session = None
 
+        self.downloadPathZip = os.path.join(self.downloadPath, 'temp.zip')
+        if os.path.exists(self.downloadPathZip):
+            os.remove(self.downloadPathZip)
+
+        self.downloadPathUnzip = os.path.join(self.downloadPath, 'tempUnzip')
+        if os.path.exists(self.downloadPathUnzip):
+            rmtree(self.downloadPathUnzip)
+
         print(' ')
         print('Folder for downloads = ' + self.downloadPath + '\n')
 
@@ -324,16 +332,14 @@ class xnatDownloader:
                     continue
 
                 # download and unzip
-                tempZip = os.path.join(self.downloadPath, 'temp.zip')
-                tempUnzip = os.path.join(self.downloadPath, 'tempUnzip')
-                xnat_assessor.download(tempZip, verbose=False)
-                with zipfile.ZipFile(tempZip, 'r') as zip_ref:
-                    zip_ref.extractall(tempUnzip)
-                os.remove(tempZip)
+                xnat_assessor.download(self.downloadPathZip, verbose=False)
+                with zipfile.ZipFile(self.downloadPathZip, 'r') as zip_ref:
+                    zip_ref.extractall(self.downloadPathUnzip)
+                os.remove(self.downloadPathZip)
 
                 # file is buried in lots of folders
-                thisFile = glob.glob(os.path.join(tempUnzip, '**', '*.'+self.assessorStyle["format"].lower()), recursive=True) + \
-                           glob.glob(os.path.join(tempUnzip, '**', '*.'+self.assessorStyle["format"].upper()), recursive=True)
+                thisFile = glob.glob(os.path.join(self.downloadPathUnzip, '**', '*.'+self.assessorStyle["format"].lower()), recursive=True) + \
+                           glob.glob(os.path.join(self.downloadPathUnzip, '**', '*.'+self.assessorStyle["format"].upper()), recursive=True)
 
                 if len(thisFile) > 1:
                     raise Exception("More than one .dcm or .xml file in downloaded assessor!")
@@ -346,7 +352,7 @@ class xnatDownloader:
                 thisExt = os.path.splitext(thisFile[0])[1]
                 if (thisExt.lower() != '.'+self.assessorStyle["format"].lower()) or (self.roiCollectionLabelFilter.lower() not in references["roiCollectionLabel"].lower()):
                     os.remove(thisFile[0])
-                    rmtree(tempUnzip)
+                    rmtree(self.downloadPathUnzip)
                     continue
 
                 print('      ' + xnat_assessor.label)
@@ -357,8 +363,23 @@ class xnatDownloader:
                 if not os.path.exists(os.path.join(self.downloadPath, 'assessors')):
                     os.mkdir(os.path.join(self.downloadPath, 'assessors'))
                 assessorFileName = os.path.join(self.downloadPath, 'assessors', myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
-                os.rename(thisFile[0], assessorFileName)
-                rmtree(tempUnzip)
+                # check if file already downloaded, and also check the assessor has the same UID
+                # if the UID is the same then don't copy into destination folder
+                # if UID is different then move new assessor into special folder
+                if os.path.exists(assessorFileName):
+                    refOld = self. __getReferencedUIDsAndLabels(assessorFileName)
+                    refNew = self. __getReferencedUIDsAndLabels(thisFile[0])
+                    if refOld["annotationUID"] == refNew["annotationUID"]:
+                        print('      Assessor already downloaded')
+                        os.remove(thisFile[0])
+                    else:
+                        print('      Assessor with matching name, but different UID already downloaded - look in ../assessorsCollision')
+                        if not os.path.exists(os.path.join(self.downloadPath, 'assessorsCollision')):
+                            os.mkdir(os.path.join(self.downloadPath, 'assessorsCollision'))
+                        os.rename(thisFile[0], assessorFileName.replace("assessors", "assessorsCollision"))
+                else:
+                    os.rename(thisFile[0], assessorFileName)
+                rmtree(self.downloadPathUnzip)
         else:
             print('      ----- No Assessors found -----')
 
@@ -440,7 +461,8 @@ class xnatDownloader:
                      "label": label})
             return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID, 
                     "referencedSopInstances": annotationObjectList,
-                    "roiCollectionLabel": dcm.SeriesDescription}
+                    "roiCollectionLabel": dcm.SeriesDescription,
+                    "annotationUID": dcm.SopInstanceUID}
 
     ##########################
     def __getReferencedUIDsAndLabelsAimXml(self, assessorFileName):
@@ -453,6 +475,9 @@ class xnatDownloader:
         # get description node whose parent is an ImageAnnotationCollectionNode
         description = [x for x in xDOM.getElementsByTagName('description') if x.parentNode.nodeName == "ImageAnnotationCollection"][0].getAttribute('value')
 
+        # get uniqueIdentifier node whose parent is an ImageAnnotationCollectionNode
+        annotationUID = [x for x in xDOM.getElementsByTagName('uniqueIdentifier') if x.parentNode.nodeName == "ImageAnnotationCollection"][0].getAttribute('root')
+
         annotationObjectList = []
         for xImAnn in xDOM.getElementsByTagName('ImageAnnotation'):
             label = xImAnn.getElementsByTagName('name').item(0).getAttribute('value')
@@ -462,4 +487,5 @@ class xnatDownloader:
                                              "label": label})
         return {"referencedSeriesUID": self.ReferencedSeriesUID,
                 "referencedSopInstances": annotationObjectList,
-                "roiCollectionLabel": description}
+                "roiCollectionLabel": description,
+                "annotationUID":annotationUID}
