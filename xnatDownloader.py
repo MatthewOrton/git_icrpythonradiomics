@@ -357,7 +357,10 @@ class xnatDownloader:
                 if not os.path.exists(os.path.join(self.downloadPath, 'assessors')):
                     os.mkdir(os.path.join(self.downloadPath, 'assessors'))
                 assessorFileName = os.path.join(self.downloadPath, 'assessors', myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
-                os.rename(thisFile[0], assessorFileName)
+                if os.path.exists(assessorFileName):
+                    print('      Assessor already downloaded')
+                else:
+                    os.rename(thisFile[0], assessorFileName)
                 rmtree(tempUnzip)
         else:
             print('      ----- No Assessors found -----')
