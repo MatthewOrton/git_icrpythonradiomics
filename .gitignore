@@ -1,2 +1,2 @@
 *.pyc
-__pycache__/xnatDownloader.cpython-36.pyc
+__pycache__/*.pyc
