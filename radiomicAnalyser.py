@@ -37,7 +37,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def computeRadiomicFeatures(self):
+    def computeRadiomicFeatures(self, binWidth=None):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -64,6 +64,9 @@ class radiomicAnalyser:
         #extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
         extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         extractor.setVerbosity(40)
+
+        if binWidth is not None:
+            extractor.settings["binWidth"] = binWidth
 
         segmentNumber = int(1)
         featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
