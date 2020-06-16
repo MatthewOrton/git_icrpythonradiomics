@@ -95,6 +95,18 @@ class radiomicAnalyser:
             self.__createMaskDcmSeg()
         # others to come
 
+    ##########################
+    # method to enable mask to be altered outside the object, typically to enable experimentation
+    def setMask(self, mask):
+        if hasattr(self,'imageData'):
+            if self.imageData["imageVolume"].shape == mask.shape:
+                self.mask = mask
+            else:
+                raise Exception("Size of externally set mask doesn't match image volume!")
+        else:
+            raise Exception("Load image data before externally setting mask!")
+
+
 
     ##########################
     def __getBinWidth(self):
