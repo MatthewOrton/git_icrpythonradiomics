@@ -106,6 +106,16 @@ class radiomicAnalyser:
         else:
             raise Exception("Load image data before externally setting mask!")
 
+    ##########################
+    # method to enable image to be altered outside the object, typically to enable experimentation
+    def setImage(self, image):
+        if hasattr(self,'imageData'):
+            if self.imageData["imageVolume"].shape == image.shape:
+                self.imageData["imageVolume"] = image
+            else:
+                raise Exception("Size of externally set image data doesn't match image volume!")
+        else:
+            raise Exception("Load image data before externally setting image!")
 
 
     ##########################
