@@ -550,7 +550,7 @@ class radiomicAnalyser:
         return outputName
 
     ##########################
-    def saveResult(self):
+    def saveResult(self, writeMode='w'):
 
         headers = []
         row = []
@@ -599,9 +599,11 @@ class radiomicAnalyser:
         fileStr = 'radiomicFeatures__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.csv'
         outputName = os.path.join(fullPath, fileStr)
 
-        with open(outputName, 'w') as fo:
+
+        with open(outputName, writeMode) as fo:
             writer = csv.writer(fo, lineterminator='\n')
-            writer.writerow(headers)
+            if writeMode=='w':
+                writer.writerow(headers)
             writer.writerow(row)
 
         print("Results file saved")
