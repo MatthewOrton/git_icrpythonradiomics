@@ -525,7 +525,7 @@ class radiomicAnalyser:
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
                 ax.set_xlim(minX, maxX)
-                ax.set_ylim(minY, maxY)
+                ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==nPlt-1:
                 yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
                 bins = np.arange(vmin, vmax, self.__getBinWidth())
