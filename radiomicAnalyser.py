@@ -535,7 +535,10 @@ class radiomicAnalyser:
             elif n==nPlt-1:
                 yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
                 binParams = self.__getBinParameters()
-                bins = np.arange(vmin, vmax, self.__getBinParameters())
+                if 'binWidth' in binParams:
+                    bins = np.arange(vmin, vmax, binParams['binWidth'])
+                elif 'binCount' in binParams:
+                    bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
                 ax.hist(yRef, bins, density=True, histtype='stepfilled')
             else:
                 ax.xaxis.set_visible(False)
