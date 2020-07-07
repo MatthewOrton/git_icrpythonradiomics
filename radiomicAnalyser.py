@@ -122,10 +122,16 @@ class radiomicAnalyser:
 
 
     ##########################
-    def __getBinWidth(self):
+    def __getBinParameters(self):
         with open(self.paramFileName) as file:
             params = yaml.full_load(file)
-        return params['setting']['binWidth']
+        if 'binWidth' in params['setting']:
+            return {'binWidth': params['setting']['binWidth']}
+        elif 'binCount' in params['setting']:
+            return {'binCount': params['setting']['binCount']}
+        else:
+            return None
+
 
     ##########################
     def __createMaskDcmSeg(self):
@@ -528,7 +534,8 @@ class radiomicAnalyser:
                 ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==nPlt-1:
                 yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
-                bins = np.arange(vmin, vmax, self.__getBinWidth())
+                binParams = self.__getBinParameters()
+                bins = np.arange(vmin, vmax, self.__getBinParameters())
                 ax.hist(yRef, bins, density=True, histtype='stepfilled')
             else:
                 ax.xaxis.set_visible(False)
