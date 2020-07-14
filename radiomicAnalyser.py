@@ -37,7 +37,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def computeRadiomicFeatures(self, binWidth=None):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -65,12 +65,37 @@ class radiomicAnalyser:
         extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         extractor.setVerbosity(40)
 
-        if binWidth is not None:
-            extractor.settings["binWidth"] = binWidth
+        if binWidthOverRide is not None:
+            extractor.settings["binWidth"] = binWidthOverRide
 
         segmentNumber = int(1)
         featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
         self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
+
+        if computeEntropyOfCounts:
+            for key in self.probabilityMatrices:
+                if not "diagnostic" in key:
+                    featureVector["entropyOfCounts_joint_" + key] = 0
+                    featureVector["entropyOfCounts_dim1_" + key] = 0
+                    featureVector["entropyOfCounts_dim2_" + key] = 0
+                    prm = self.probabilityMatrices[key]
+                    if len(prm.shape)==3:
+                        prm = prm[:,:,:,np.newaxis]
+                    for n in range(prm.shape[3]):
+                        discretizedProbability = np.unique(prm[0, :, :, n], return_inverse=True)[1]
+                        probabilityOfCounts = np.histogram(discretizedProbability, bins=range(discretizedProbability.max()+1))[0]
+                        probabilityOfCounts = probabilityOfCounts/probabilityOfCounts.sum()
+                        featureVector["entropyOfCounts_joint_" + key] += np.sum(-np.log(np.power(probabilityOfCounts,probabilityOfCounts)))
+                        #
+                        discretizedProbability_1 = np.unique(np.sum(prm[0, :, :, n], axis=0), return_inverse=True)[1]
+                        probabilityOfCounts_1 = np.histogram(discretizedProbability_1, bins=range(discretizedProbability_1.max()+1))[0]
+                        probabilityOfCounts_1 = probabilityOfCounts_1/probabilityOfCounts_1.sum()
+                        featureVector["entropyOfCounts_dim1_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_1,probabilityOfCounts_1)))
+                        #
+                        discretizedProbability_2 = np.unique(np.sum(prm[0, :, :, n], axis=1), return_inverse=True)[1]
+                        probabilityOfCounts_2 = np.histogram(discretizedProbability_2, bins=range(discretizedProbability_2.max()+1))[0]
+                        probabilityOfCounts_2 = probabilityOfCounts_2/probabilityOfCounts_2.sum()
+                        featureVector["entropyOfCounts_dim2_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_2,probabilityOfCounts_2)))
 
         # # rename keys if indicated
         # if ((oldDictStr is not '') and (newDictStr is not '')):
@@ -624,13 +649,13 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveProbabilityMatrices(self):
+    def saveProbabilityMatrices(self, imageType='original'):
 
         fig = plt.figure()
         columns = 7
         rows = 5
         # show GLCM
-        for n in range(self.probabilityMatrices["original_glcm"].shape[3]):
+        for n in range(self.probabilityMatrices[imageType + "_glcm"].shape[3]):
             fig.add_subplot(rows, columns, n+1)
             if n==0:
                 if len(self.roiObjectLabelFound) == 1:
@@ -641,36 +666,36 @@ class radiomicAnalyser:
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM')
-            plt.imshow(self.probabilityMatrices["original_glcm"][0,:,:,n])
+            plt.imshow(self.probabilityMatrices[imageType + "_glcm"][0,:,:,n])
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         # show GLRLM
-        for n in range(self.probabilityMatrices["original_glrlm"].shape[3]):
+        for n in range(self.probabilityMatrices[imageType + "_glrlm"].shape[3]):
             fig.add_subplot(rows, columns, n+15)
             if np.mod(n,7)==0:
                 plt.ylabel('GLRLM')
-            plt.imshow(self.probabilityMatrices["original_glrlm"][0, :, :, n], aspect='auto')
+            plt.imshow(self.probabilityMatrices[imageType + "_glrlm"][0, :, :, n], aspect='auto')
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         fig.add_subplot(rows, 3, 13)
-        plt.imshow(self.probabilityMatrices["original_glszm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_glszm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLSZM')
 
         fig.add_subplot(rows, 3, 14)
-        plt.imshow(self.probabilityMatrices["original_gldm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_gldm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLDM')
 
         fig.add_subplot(rows, 3, 15)
-        plt.imshow(self.probabilityMatrices["original_ngtdm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_ngtdm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('NGTDM')
 
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'probabilityMatrices__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
+        fileStr = 'probabilityMatrices_' + imageType + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
         outputName = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(outputName, papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('probabilityMatrices saved ' + outputName)
