@@ -42,6 +42,8 @@ class radiomicsFeatureExtractorEnhanced(RadiomicsFeatureExtractor):
             Type of diagnostic features differs, but can always be represented as a string.
         """
         global geometryTolerance, logger
+        _settings = self.settings.copy()
+
         tolerance = self.settings.get('geometryTolerance')
         additionalInfo = self.settings.get('additionalInfo', False)
         resegmentShape = self.settings.get('resegmentShape', False)
@@ -78,7 +80,7 @@ class radiomicsFeatureExtractorEnhanced(RadiomicsFeatureExtractor):
 
         # 1. Load the image and mask
         probabilityMatrices = collections.OrderedDict()
-        image, mask = self.loadImage(imageFilepath, maskFilepath, generalInfo)
+        image, mask = self.loadImage(imageFilepath, maskFilepath, generalInfo, **_settings)
 
         # 2. Check whether loaded mask contains a valid ROI for feature extraction and get bounding box
         # Raises a ValueError if the ROI is invalid
