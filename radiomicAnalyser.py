@@ -20,7 +20,7 @@ from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5):
+    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5, assessorSubtractFileName=None):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -30,6 +30,7 @@ class radiomicAnalyser:
         self.roiObjectLabelFilter = project["roiObjectLabelFilter"]
         self.paramFileName = project["paramFileName"]
         self.fineGrid = fineGrid
+        self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
         print(' ')
@@ -197,15 +198,20 @@ class radiomicAnalyser:
     def __createMaskAimXml(self):
         xDOM = minidom.parse(self.assessorFileName)
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
+        self.mask, self.contours = self.__createMaskArrayFromContours(xDOM)
+
+
+##############################
+    def __createMaskAimXmlArrayFromContours(self, xDOM, checkRoiLabel=True):
         if xDOM.getElementsByTagName('ImageAnnotation').length != 1:
             raise Exception("AIM file containing more than one ImageAnnotation not supported yet!")
         xImageAnnotation = xDOM.getElementsByTagName('ImageAnnotation').item(0)
         roiLabel = xImageAnnotation.getElementsByTagName('name').item(0).getAttribute('value')
-        if (self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
+        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
             return
-        self.mask = np.zeros(self.imageData["imageVolume"].shape)
-        self.contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
+        mask = np.zeros(self.imageData["imageVolume"].shape)
+        contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
         for xMe in xImageAnnotation.getElementsByTagName('MarkupEntity'):
             # find corresponding slice and include this mask - logical_or needed as there may be more than one contour on a slice
             thisSopInstUID = xMe.getElementsByTagName("imageReferenceUid").item(0).getAttribute("root")
@@ -227,12 +233,13 @@ class radiomicAnalyser:
                 y.append(thisY)
 
             poly = [self.fineGrid*val for pair in zip(x, y) for val in pair]
-            img = Image.new('L', (self.fineGrid*self.mask.shape[1], self.fineGrid*self.mask.shape[2]), 0)
+            img = Image.new('L', (self.fineGrid*mask.shape[1], self.fineGrid*mask.shape[2]), 0)
             ImageDraw.Draw(img).polygon(poly, outline=1, fill=2)
             thisMask = self.__pixelBlockAverage(np.array(img)) > 1
-            self.mask[sliceIdx,:,:] = np.logical_or(self.mask[sliceIdx,:,:], thisMask)
+            mask[sliceIdx,:,:] = np.logical_or(mask[sliceIdx,:,:], thisMask)
             # keep contours so we can display on thumbnail
-            self.contours[sliceIdx].append({"x":x, "y":y})
+            contours[sliceIdx].append({"x":x, "y":y})
+        return mask, contours
 
 
     ##########################
