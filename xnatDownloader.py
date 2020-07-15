@@ -151,7 +151,7 @@ class xnatDownloader:
             xnat_subjects = xnat_session.projects[self.projectStr].subjects
             for xnat_subject in xnat_subjects.values():
                 subjectList.append(xnat_subject.label)
-        return subjectList
+        return subjectList.sort()
 
 
     ##########################
