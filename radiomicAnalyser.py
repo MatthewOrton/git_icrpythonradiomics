@@ -201,6 +201,13 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
         self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
 
+##########################
+    def removeFromMask(self, assessorCalcification, dilateLength=0):
+        xDOM = minidom.parse(assessorCalcification)
+        maskDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
+        
+
+
 
 ##############################
     def __createMaskAimXmlArrayFromContours(self, xDOM, checkRoiLabel=True):
