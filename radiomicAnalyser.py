@@ -10,6 +10,7 @@ import os
 import SimpleITK as sitk
 import csv
 import yaml
+import cv2
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -20,7 +21,7 @@ from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5):
+    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5, assessorSubtractFileName=None):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -30,6 +31,7 @@ class radiomicAnalyser:
         self.roiObjectLabelFilter = project["roiObjectLabelFilter"]
         self.paramFileName = project["paramFileName"]
         self.fineGrid = fineGrid
+        self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
         print(' ')
@@ -37,7 +39,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def computeRadiomicFeatures(self):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -65,9 +67,37 @@ class radiomicAnalyser:
         extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         extractor.setVerbosity(40)
 
+        if binWidthOverRide is not None:
+            extractor.settings["binWidth"] = binWidthOverRide
+
         segmentNumber = int(1)
         featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
         self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
+
+        if computeEntropyOfCounts:
+            for key in self.probabilityMatrices:
+                if not "diagnostic" in key:
+                    featureVector["entropyOfCounts_joint_" + key] = 0
+                    featureVector["entropyOfCounts_dim1_" + key] = 0
+                    featureVector["entropyOfCounts_dim2_" + key] = 0
+                    prm = self.probabilityMatrices[key]
+                    if len(prm.shape)==3:
+                        prm = prm[:,:,:,np.newaxis]
+                    for n in range(prm.shape[3]):
+                        discretizedProbability = np.unique(prm[0, :, :, n], return_inverse=True)[1]
+                        probabilityOfCounts = np.histogram(discretizedProbability, bins=range(discretizedProbability.max()+1))[0]
+                        probabilityOfCounts = probabilityOfCounts/probabilityOfCounts.sum()
+                        featureVector["entropyOfCounts_joint_" + key] += np.sum(-np.log(np.power(probabilityOfCounts,probabilityOfCounts)))
+                        #
+                        discretizedProbability_1 = np.unique(np.sum(prm[0, :, :, n], axis=0), return_inverse=True)[1]
+                        probabilityOfCounts_1 = np.histogram(discretizedProbability_1, bins=range(discretizedProbability_1.max()+1))[0]
+                        probabilityOfCounts_1 = probabilityOfCounts_1/probabilityOfCounts_1.sum()
+                        featureVector["entropyOfCounts_dim1_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_1,probabilityOfCounts_1)))
+                        #
+                        discretizedProbability_2 = np.unique(np.sum(prm[0, :, :, n], axis=1), return_inverse=True)[1]
+                        probabilityOfCounts_2 = np.histogram(discretizedProbability_2, bins=range(discretizedProbability_2.max()+1))[0]
+                        probabilityOfCounts_2 = probabilityOfCounts_2/probabilityOfCounts_2.sum()
+                        featureVector["entropyOfCounts_dim2_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_2,probabilityOfCounts_2)))
 
         # # rename keys if indicated
         # if ((oldDictStr is not '') and (newDictStr is not '')):
@@ -95,12 +125,40 @@ class radiomicAnalyser:
             self.__createMaskDcmSeg()
         # others to come
 
+    ##########################
+    # method to enable mask to be altered outside the object, typically to enable experimentation
+    def setMask(self, mask):
+        if hasattr(self,'imageData'):
+            if self.imageData["imageVolume"].shape == mask.shape:
+                self.mask = mask
+            else:
+                raise Exception("Size of externally set mask doesn't match image volume!")
+        else:
+            raise Exception("Load image data before externally setting mask!")
 
     ##########################
-    def __getBinWidth(self):
+    # method to enable image to be altered outside the object, typically to enable experimentation
+    def setImage(self, image):
+        if hasattr(self,'imageData'):
+            if self.imageData["imageVolume"].shape == image.shape:
+                self.imageData["imageVolume"] = image
+            else:
+                raise Exception("Size of externally set image data doesn't match image volume!")
+        else:
+            raise Exception("Load image data before externally setting image!")
+
+
+    ##########################
+    def __getBinParameters(self):
         with open(self.paramFileName) as file:
             params = yaml.full_load(file)
-        return params['setting']['binWidth']
+        if 'binWidth' in params['setting']:
+            return {'binWidth': params['setting']['binWidth']}
+        elif 'binCount' in params['setting']:
+            return {'binCount': params['setting']['binCount']}
+        else:
+            return None
+
 
     ##########################
     def __createMaskDcmSeg(self):
@@ -141,15 +199,20 @@ class radiomicAnalyser:
     def __createMaskAimXml(self):
         xDOM = minidom.parse(self.assessorFileName)
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
+        self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
+
+
+##############################
+    def __createMaskAimXmlArrayFromContours(self, xDOM, checkRoiLabel=True):
         if xDOM.getElementsByTagName('ImageAnnotation').length != 1:
             raise Exception("AIM file containing more than one ImageAnnotation not supported yet!")
         xImageAnnotation = xDOM.getElementsByTagName('ImageAnnotation').item(0)
         roiLabel = xImageAnnotation.getElementsByTagName('name').item(0).getAttribute('value')
-        if (self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
+        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
             return
-        self.mask = np.zeros(self.imageData["imageVolume"].shape)
-        self.contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
+        mask = np.zeros(self.imageData["imageVolume"].shape)
+        contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
         for xMe in xImageAnnotation.getElementsByTagName('MarkupEntity'):
             # find corresponding slice and include this mask - logical_or needed as there may be more than one contour on a slice
             thisSopInstUID = xMe.getElementsByTagName("imageReferenceUid").item(0).getAttribute("root")
@@ -171,12 +234,13 @@ class radiomicAnalyser:
                 y.append(thisY)
 
             poly = [self.fineGrid*val for pair in zip(x, y) for val in pair]
-            img = Image.new('L', (self.fineGrid*self.mask.shape[1], self.fineGrid*self.mask.shape[2]), 0)
+            img = Image.new('L', (self.fineGrid*mask.shape[1], self.fineGrid*mask.shape[2]), 0)
             ImageDraw.Draw(img).polygon(poly, outline=1, fill=2)
             thisMask = self.__pixelBlockAverage(np.array(img)) > 1
-            self.mask[sliceIdx,:,:] = np.logical_or(self.mask[sliceIdx,:,:], thisMask)
+            mask[sliceIdx,:,:] = np.logical_or(mask[sliceIdx,:,:], thisMask)
             # keep contours so we can display on thumbnail
-            self.contours[sliceIdx].append({"x":x, "y":y})
+            contours[sliceIdx].append({"x":x, "y":y})
+        return mask, contours
 
 
     ##########################
@@ -500,10 +564,14 @@ class radiomicAnalyser:
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
                 ax.set_xlim(minX, maxX)
-                ax.set_ylim(minY, maxY)
+                ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==nPlt-1:
                 yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
-                bins = np.arange(vmin, vmax, self.__getBinWidth())
+                binParams = self.__getBinParameters()
+                if 'binWidth' in binParams:
+                    bins = np.arange(vmin, vmax, binParams['binWidth'])
+                elif 'binCount' in binParams:
+                    bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
                 ax.hist(yRef, bins, density=True, histtype='stepfilled')
             else:
                 ax.xaxis.set_visible(False)
@@ -528,7 +596,7 @@ class radiomicAnalyser:
         return outputName
 
     ##########################
-    def saveResult(self):
+    def saveResult(self, writeMode='w'):
 
         headers = []
         row = []
@@ -577,9 +645,11 @@ class radiomicAnalyser:
         fileStr = 'radiomicFeatures__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.csv'
         outputName = os.path.join(fullPath, fileStr)
 
-        with open(outputName, 'w') as fo:
+
+        with open(outputName, writeMode) as fo:
             writer = csv.writer(fo, lineterminator='\n')
-            writer.writerow(headers)
+            if writeMode=='w':
+                writer.writerow(headers)
             writer.writerow(row)
 
         print("Results file saved")
@@ -587,13 +657,13 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveProbabilityMatrices(self):
+    def saveProbabilityMatrices(self, imageType='original'):
 
         fig = plt.figure()
         columns = 7
         rows = 5
         # show GLCM
-        for n in range(self.probabilityMatrices["original_glcm"].shape[3]):
+        for n in range(self.probabilityMatrices[imageType + "_glcm"].shape[3]):
             fig.add_subplot(rows, columns, n+1)
             if n==0:
                 if len(self.roiObjectLabelFound) == 1:
@@ -604,36 +674,36 @@ class radiomicAnalyser:
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM')
-            plt.imshow(self.probabilityMatrices["original_glcm"][0,:,:,n])
+            plt.imshow(self.probabilityMatrices[imageType + "_glcm"][0,:,:,n])
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         # show GLRLM
-        for n in range(self.probabilityMatrices["original_glrlm"].shape[3]):
+        for n in range(self.probabilityMatrices[imageType + "_glrlm"].shape[3]):
             fig.add_subplot(rows, columns, n+15)
             if np.mod(n,7)==0:
                 plt.ylabel('GLRLM')
-            plt.imshow(self.probabilityMatrices["original_glrlm"][0, :, :, n], aspect='auto')
+            plt.imshow(self.probabilityMatrices[imageType + "_glrlm"][0, :, :, n], aspect='auto')
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         fig.add_subplot(rows, 3, 13)
-        plt.imshow(self.probabilityMatrices["original_glszm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_glszm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLSZM')
 
         fig.add_subplot(rows, 3, 14)
-        plt.imshow(self.probabilityMatrices["original_gldm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_gldm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLDM')
 
         fig.add_subplot(rows, 3, 15)
-        plt.imshow(self.probabilityMatrices["original_ngtdm"][0, :, :], aspect='auto')
+        plt.imshow(self.probabilityMatrices[imageType + "_ngtdm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('NGTDM')
 
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'probabilityMatrices__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
+        fileStr = 'probabilityMatrices_' + imageType + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
         outputName = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(outputName, papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('probabilityMatrices saved ' + outputName)
