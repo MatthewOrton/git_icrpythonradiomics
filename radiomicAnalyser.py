@@ -10,6 +10,7 @@ import os
 import SimpleITK as sitk
 import csv
 import yaml
+import cv2
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -198,7 +199,7 @@ class radiomicAnalyser:
     def __createMaskAimXml(self):
         xDOM = minidom.parse(self.assessorFileName)
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
-        self.mask, self.contours = self.__createMaskArrayFromContours(xDOM)
+        self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
 
 
 ##############################
