@@ -67,9 +67,10 @@ class xnatDownloader:
 
 
     ##########################
-    def downloadAssessors_Project(self):
+    def downloadAssessors_Project(self, subjectList=None):
         # Get list of all subjects in project.
-        subjectList = self.getSubjectList_Project()
+        if subjectList is None:
+            subjectList = self.getSubjectList_Project()
         self.subjectList_downloadAssessors(subjectList)
 
 
