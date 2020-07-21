@@ -201,12 +201,17 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
         self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
 
-##########################
-    def removeFromMask(self, assessorCalcification, dilateLength=0):
-        xDOM = minidom.parse(assessorCalcification)
-        maskDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
-        
 
+##########################
+    def removeFromMask(self, assessorCalcification, dilateDiameter=0):
+        xDOM = minidom.parse(assessorCalcification)
+        self.maskDelete, contours = self.__createMaskAimXmlArrayFromContours(xDOM)
+        if dilateDiameter>0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
+            for n in range(self.maskDelete.shape[0]):
+                self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
+        self.maskOriginal = self.mask
+        self.mask = np.logical_and(self.mask.astype(bool), np.logical_not(self.maskDelete.astype(bool))).astype(float)
 
 
 ##############################
@@ -568,6 +573,21 @@ class radiomicAnalyser:
                 ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
                 idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
                 ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                # overplot holes if there are present
+                if hasattr(self, 'maskDelete'):
+                    maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
+                    ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                            linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
+                    ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                            linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
+                    ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                            linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
+                    ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                            linewidth=linewidth)
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
                 ax.set_xlim(minX, maxX)
