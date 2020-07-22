@@ -11,6 +11,7 @@ import SimpleITK as sitk
 import csv
 import yaml
 import cv2
+import nibabel as nib
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -21,7 +22,7 @@ from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5, assessorSubtractFileName=None):
+    def __init__(self, project, assessorFileName, sopInstDict=None, fineGrid=5, assessorSubtractFileName=None):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -123,6 +124,8 @@ class radiomicAnalyser:
             self.__createMaskAimXml()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'dcm':
             self.__createMaskDcmSeg()
+        if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nii':
+            self.mask = np.asarray(nib.load(self.assessorFileName).get_data())
         # others to come
 
     ##########################
@@ -308,7 +311,28 @@ class radiomicAnalyser:
         return np.dot(Vr, np.dot(x, np.transpose(Vc))) / (self.fineGrid * self.fineGrid)
 
     ##########################
-    def loadImageData(self):
+    def loadImageData(self, fileType=None, fileName = None):
+
+        # direct loading if specified
+        if fileType is 'nii':
+            imageData = {}
+            imageData["imageVolume"] = np.asarray(nib.load(fileName).get_data())
+            # for nifti metadata just put in default values for now
+            imageData["imagePositionPatient"] = []
+            imageData["sopInstUID"] = []
+            for n in range(imageData["imageVolume"].shape[2]):
+                imageData["imagePositionPatient"].append([0, 0, 2*n]) # this is hard-coded for IBSI digital phantom for now
+                imageData["sopInstUID"].append(str(n))
+            imageData["imageOrientationPatient"] = [0, 0, 1, 0, 1, 0] # default
+            imageData["pixelSpacing"] = [2, 2] # this is hard-coded for IBSI digital phantom for now
+            imageData["windowCenter"] = 0
+            imageData["windowWidth"] = 100
+            self.imageData = imageData
+            # some other metadata from the assessor that needs to be present
+            self.ReferencedSeriesUID = ''
+            self.ImageAnnotationCollection_Description = ''
+            self.roiObjectLabelFound = ''
+            return
 
         refUID = self.__getReferencedUIDs()
 
@@ -472,6 +496,8 @@ class radiomicAnalyser:
         elif self.assessorStyle['format'].lower() == 'xml':
             xDOM = minidom.parse(self.assessorFileName)
             annotationUID = xDOM.getElementsByTagName('ImageAnnotation').item(0).getElementsByTagName('uniqueIdentifier').item(0).getAttribute('root')
+        elif self.assessorStyle['format'].lower() == 'nii':
+            annotationUID = ''
         return annotationUID
 
 
