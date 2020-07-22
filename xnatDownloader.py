@@ -461,10 +461,17 @@ class xnatDownloader:
                     {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[
                         0].ReferencedSOPInstanceUID,
                      "label": label})
-            return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID, 
+
+            # have had dicom seg files with no sopInstanceUID, so catch this rather than crash!
+            if hasattr(dcm,'SopInstanceUID'):
+                sopInstUid = dcm.SopInstanceUID
+            else:
+                sopInstUid = 'SopInstanceUID not found!'
+
+            return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID,
                     "referencedSopInstances": annotationObjectList,
                     "roiCollectionLabel": dcm.SeriesDescription,
-                    "annotationUID": dcm.SopInstanceUID}
+                    "annotationUID": sopInstUid}
 
     ##########################
     def __getReferencedUIDsAndLabelsAimXml(self, assessorFileName):
