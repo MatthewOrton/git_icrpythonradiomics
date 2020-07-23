@@ -118,6 +118,12 @@ class radiomicAnalyser:
         print('Radiomic features computed')
 
 
+
+    ##########################
+    def setParamFileName(self, paramFileName):
+        self.paramFileName = paramFileName
+
+
     ##########################
     def createMask(self):
         if self.assessorStyle['type'].lower() == 'aim' and self.assessorStyle['format'].lower() == 'xml':
