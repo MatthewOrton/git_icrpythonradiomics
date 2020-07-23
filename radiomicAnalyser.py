@@ -123,6 +123,10 @@ class radiomicAnalyser:
     def setParamFileName(self, paramFileName):
         self.paramFileName = paramFileName
 
+    ##########################
+    def setOutputPath(self, outputPath):
+        self.outputPath = outputPath
+
 
     ##########################
     def createMask(self):
