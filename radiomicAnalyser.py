@@ -2,7 +2,6 @@ import pydicom
 from xml.dom import minidom
 import numpy as np
 from itertools import compress
-from PIL import Image, ImageDraw
 from scipy.linalg import circulant
 from scipy.ndimage import label
 import matplotlib.pyplot as plt
@@ -12,6 +11,7 @@ import csv
 import yaml
 import cv2
 import nibabel as nib
+from skimage import draw
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -22,7 +22,7 @@ from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict=None, fineGrid=5, assessorSubtractFileName=None):
+    def __init__(self, project, assessorFileName, sopInstDict=None, assessorSubtractFileName=None):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -31,7 +31,6 @@ class radiomicAnalyser:
         self.outputPath = project["outputPath"]
         self.roiObjectLabelFilter = project["roiObjectLabelFilter"]
         self.paramFileName = project["paramFileName"]
-        self.fineGrid = fineGrid
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
@@ -258,12 +257,13 @@ class radiomicAnalyser:
                 x.append(thisX)
                 y.append(thisY)
 
-            poly = [self.fineGrid*val for pair in zip(x, y) for val in pair]
-            img = Image.new('L', (self.fineGrid*mask.shape[1], self.fineGrid*mask.shape[2]), 0)
-            ImageDraw.Draw(img).polygon(poly, outline=1, fill=2)
-            thisMask = self.__pixelBlockAverage(np.array(img)) > 1
-            mask[sliceIdx,:,:] = np.logical_or(mask[sliceIdx,:,:], thisMask)
-            # keep contours so we can display on thumbnail
+            # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+            # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+            # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+            fill_row_coords, fill_col_coords = draw.polygon(x, y, (mask.shape[1], mask.shape[2]))
+            mask[sliceIdx, fill_row_coords, fill_col_coords] = True
+
+            # keep contours so we can display on thumbnail if we need to
             contours[sliceIdx].append({"x":x, "y":y})
         return mask, contours
 
@@ -309,6 +309,7 @@ class radiomicAnalyser:
 
 
     # function to average over NxN blocks of pixels
+    # legacy from old way of computing mask, but have left in all the same
     ##########################
     def __pixelBlockAverage(self, x):
         vr = np.zeros(x.shape[0])
@@ -512,7 +513,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True):
 
         def findMaskEdges(mask):
 
@@ -597,33 +598,35 @@ class radiomicAnalyser:
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
                 ax.imshow(self.imageData["imageVolume"][n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
-                #contours = self.contours[n]
-                # for contour in contours:
-                #     ax.plot([x-0.5 for x in contour["x"]], [y-0.5 for y in contour["y"]], 'c', linewidth=linewidth*2)
+                if showContours:
+                    contours = self.contours[n]
+                    for contour in contours:
+                        ax.plot([x-0.5 for x in contour["x"]], [y-0.5 for y in contour["y"]], 'c', linewidth=linewidth*2)
                 maskHere = self.mask[n,:,:]
-                idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
-                ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
-                ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
-                ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
-                ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                # overplot holes if there are present
-                if hasattr(self, 'maskDelete'):
-                    maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
-                    idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
-                    ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
-                            linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
-                    ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
-                            linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
-                    ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
-                            linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
-                    ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
-                            linewidth=linewidth)
+                if showMaskBoundary:
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
+                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
+                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
+                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
+                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    # overplot holes if there are present
+                    if hasattr(self, 'maskDelete'):
+                        maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
                 ax.set_xlim(minX, maxX)
