@@ -215,9 +215,9 @@ class radiomicAnalyser:
 
 
 ##########################
-    def removeFromMask(self, assessorCalcification, dilateDiameter=0):
-        xDOM = minidom.parse(assessorCalcification)
-        self.maskDelete, contours = self.__createMaskAimXmlArrayFromContours(xDOM)
+    def removeFromMask(self, assessorRemove, dilateDiameter=0):
+        xDOM = minidom.parse(assessorRemove)
+        self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
         if dilateDiameter>0:
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
             for n in range(self.maskDelete.shape[0]):
@@ -248,20 +248,21 @@ class radiomicAnalyser:
             index = []
             x = []
             y = []
-            # make mask for matrix size 5x larger than original, then for each 5x5 section final mask will be set if
-            # more than half of
+            # Note that scikit-image and matplotlib take the *center* of the top-left pixel to be at (0,0).
+            # On the other hand, AIM takes the top-left corner of the top-left pixel to be at (0,0), and gives the
+            # polygon co-ordinates as pixel counts (not patient co-ordinates).  Hence the - 0.5 
             for sc in xScc.item(0).getElementsByTagName('TwoDimensionSpatialCoordinate'):
                 index.append(int(sc.getElementsByTagName('coordinateIndex').item(0).getAttribute('value')))
                 thisX = float(sc.getElementsByTagName('x').item(0).getAttribute('value'))
                 thisY = float(sc.getElementsByTagName('y').item(0).getAttribute('value'))
-                x.append(thisX)
-                y.append(thisY)
+                x.append(thisX - 0.5)
+                y.append(thisY - 0.5)
 
             # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
             # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
             # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
-            fill_row_coords, fill_col_coords = draw.polygon(x, y, (mask.shape[1], mask.shape[2]))
-            mask[sliceIdx, fill_row_coords, fill_col_coords] = True
+            fill_row_coords, fill_col_coords = draw.polygon(y, x, (mask.shape[1], mask.shape[2]))
+            mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
 
             # keep contours so we can display on thumbnail if we need to
             contours[sliceIdx].append({"x":x, "y":y})
@@ -601,7 +602,10 @@ class radiomicAnalyser:
                 if showContours:
                     contours = self.contours[n]
                     for contour in contours:
-                        ax.plot([x-0.5 for x in contour["x"]], [y-0.5 for y in contour["y"]], 'c', linewidth=linewidth*2)
+                        ax.plot([x for x in contour["x"]], [y for y in contour["y"]], 'c', linewidth=linewidth)
+                    contoursDelete = self.contoursDelete[n]
+                    for contourDelete in contoursDelete:
+                        ax.plot([x for x in contourDelete["x"]], [y for y in contourDelete["y"]], 'r', linewidth=linewidth)
                 maskHere = self.mask[n,:,:]
                 if showMaskBoundary:
                     idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
