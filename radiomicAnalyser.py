@@ -138,6 +138,15 @@ class radiomicAnalyser:
         # others to come
 
     ##########################
+    def removeOutliersFromMask(self, outlierWidth=3):
+        pixels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+        mu = np.mean(pixels)
+        sg = np.std(pixels)
+        imageVolumeOutliers = np.logical_or(self.imageData["imageVolume"]<(mu-outlierWidth*sg),
+                                       self.imageData["imageVolume"]>(mu+outlierWidth*sg))
+        self.mask[np.logical_and(self.mask==1.0, imageVolumeOutlier)] = 0.0
+
+    ##########################
     # method to enable mask to be altered outside the object, typically to enable experimentation
     def setMask(self, mask):
         if hasattr(self,'imageData'):
