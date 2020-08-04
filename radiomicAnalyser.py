@@ -144,7 +144,7 @@ class radiomicAnalyser:
         sg = np.std(pixels)
         imageVolumeOutliers = np.logical_or(self.imageData["imageVolume"]<(mu-outlierWidth*sg),
                                        self.imageData["imageVolume"]>(mu+outlierWidth*sg))
-        self.mask[np.logical_and(self.mask==1.0, imageVolumeOutlier)] = 0.0
+        self.mask[np.logical_and(self.mask==1.0, imageVolumeOutliers)] = 0.0
 
     ##########################
     # method to enable mask to be altered outside the object, typically to enable experimentation
@@ -675,7 +675,7 @@ class radiomicAnalyser:
         return outputName
 
     ##########################
-    def saveResult(self, writeMode='w'):
+    def saveResult(self, writeMode='w', includeHeader=True):
 
         headers = []
         row = []
@@ -727,7 +727,7 @@ class radiomicAnalyser:
 
         with open(outputName, writeMode) as fo:
             writer = csv.writer(fo, lineterminator='\n')
-            if writeMode=='w':
+            if includeHeader:
                 writer.writerow(headers)
             writer.writerow(row)
 
