@@ -6,6 +6,7 @@ from scipy.linalg import circulant
 from scipy.ndimage import label
 import matplotlib.pyplot as plt
 import os
+import re
 import SimpleITK as sitk
 import csv
 import yaml
@@ -203,8 +204,8 @@ class radiomicAnalyser:
                 raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
             referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
             referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-            if (self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != referencedSegmentLabel):
-                continue
+            if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
+                    continue
             thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
             sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
             self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
@@ -241,7 +242,7 @@ class radiomicAnalyser:
             raise Exception("AIM file containing more than one ImageAnnotation not supported yet!")
         xImageAnnotation = xDOM.getElementsByTagName('ImageAnnotation').item(0)
         roiLabel = xImageAnnotation.getElementsByTagName('name').item(0).getAttribute('value')
-        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
+        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (re.match(self.roiObjectLabelFilter, roiLabel) is None):
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
             return
         mask = np.zeros(self.imageData["imageVolume"].shape)
@@ -419,7 +420,7 @@ class radiomicAnalyser:
             references = self.__getReferencedUIDsAimXml()
         # select segments matching segmentLabel input
         if self.roiObjectLabelFilter is not None:
-            indToKeep = [x["label"] == self.roiObjectLabelFilter for x in references]
+            indToKeep = [re.match(self.roiObjectLabelFilter, x["label"]) is not None for x in references]
             if not any(indToKeep):
                 references = []
             else:
@@ -581,16 +582,18 @@ class radiomicAnalyser:
         fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         linewidth = 0.2
-        minX = np.inf
-        maxX = -np.inf
-        minY = np.inf
-        maxY = -np.inf
-        for contours in self.contours:
-            for contour in contours:
-                minX = np.min([minX, np.min(contour["x"])])
-                maxX = np.max([maxX, np.max(contour["x"])])
-                minY = np.min([minY, np.min(contour["y"])])
-                maxY = np.max([maxY, np.max(contour["y"])])
+        dim1 = np.where(np.sum(self.mask, axis=(0, 2)) > 0)
+        dim2 = np.where(np.sum(self.mask, axis=(0, 1)) > 0)
+        minX = min(dim2)
+        maxX = max(dim2)
+        minY = min(dim1)
+        maxY = max(dim1)
+        # for contours in self.contours:
+        #     for contour in contours:
+        #         minX = np.min([minX, np.min(contour["x"])])
+        #         maxX = np.max([maxX, np.max(contour["x"])])
+        #         minY = np.min([minY, np.min(contour["y"])])
+        #         maxY = np.max([maxY, np.max(contour["y"])])
         # make spans at least 60 pixels, then add 20
         midX = 0.5*(minX + maxX)
         minX = np.min([midX - 30, minX])-20
@@ -660,7 +663,7 @@ class radiomicAnalyser:
                 ax.spines['left'].set_visible(False)
                 ax.spines['right'].set_visible(False)
 
-        plt.gcf().suptitle(titleStr, fontsize=10)
+        plt.gcf().suptitle(titleStr, fontsize=8)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
         if not os.path.exists(fullPath):
