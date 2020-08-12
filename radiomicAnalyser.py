@@ -35,6 +35,8 @@ class radiomicAnalyser:
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
+        self.annotationUID = self.__getAnnotationUID()
+
         print(' ')
         print('Processing : ' + self.assessorFileName)
 
@@ -126,6 +128,16 @@ class radiomicAnalyser:
     ##########################
     def setOutputPath(self, outputPath):
         self.outputPath = outputPath
+
+    ##########################
+    # This function is necessary because the XNAT metadata on subject/session/scan/assessor are only available via the filename
+    # These details are included in the .csv file that is written with self.saveResult(), but sometimes they need adjusting
+    # to account for anomalies in the data.  For example, in the TracerX study some patients had two tumours, and this
+    # is indicated in the clinical data spreadsheet with the subject name, e.g. K114_L and K114_R.  We need a way to reflect
+    # this in the .csv output, so by changing the assessor filename manually we can change these fields in the output file
+    def editAssessorFileName(self, newAssessorFileName):
+        self.assessorFileName = newAssessorFileName
+
 
 
     ##########################
@@ -706,7 +718,7 @@ class radiomicAnalyser:
         row.append(self.ReferencedSeriesUID)
 
         headers.append("source_annotationUID")
-        row.append(self.__getAnnotationUID())
+        row.append(self.annotationUID)
 
         headers.append("source_ImageAnnotationCollectionDescription")
         row.append(self.ImageAnnotationCollection_Description)
