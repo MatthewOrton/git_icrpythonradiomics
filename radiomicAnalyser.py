@@ -13,6 +13,7 @@ import yaml
 import cv2
 import nibabel as nib
 from skimage import draw
+import random
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -42,7 +43,9 @@ class radiomicAnalyser:
 
 
     ##########################
-    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False):
+    # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
+    # been computed in a particular way.  E.g. when shuffling the voxels I use 'shuffled_' as a prefix
+    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -102,18 +105,10 @@ class radiomicAnalyser:
                         probabilityOfCounts_2 = probabilityOfCounts_2/probabilityOfCounts_2.sum()
                         featureVector["entropyOfCounts_dim2_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_2,probabilityOfCounts_2)))
 
-        # # rename keys if indicated
-        # if ((oldDictStr is not '') and (newDictStr is not '')):
-        #     featureVectorRenamed = OrderedDict()
-        #     for key in featureVector.keys():
-        #         newKey = str(key).replace(oldDictStr, newDictStr)
-        #         featureVectorRenamed[newKey] = featureVector[key]
-        #     featureVector = featureVectorRenamed
-
         # insert or append featureVector just computed
         if hasattr(self, 'featureVector'):
             for key in featureVector.keys():
-                self.featureVector[key] = featureVector[key]
+                self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
         else:
             self.featureVector = featureVector
 
@@ -422,6 +417,15 @@ class radiomicAnalyser:
         imageData["imageVolume"] = np.asarray(imSlice)
         imageData["imagePositionPatient"] = [x for _, x in sorted(zip(sliceLocation, imagePositionPatient))]
         self.imageData = imageData
+
+    ##########################
+    def shuffleVoxels(self, fixedSeed=True):
+        if fixedSeed:
+            random.seed(42)
+        # get pixel values inside mask
+        voxels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+        self.imageData["imageVolume"][self.mask == 1] = random.shuffle(voxels)
+
 
 
     ##########################
