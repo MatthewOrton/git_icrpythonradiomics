@@ -13,7 +13,6 @@ import yaml
 import cv2
 import nibabel as nib
 from skimage import draw
-import random
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -36,6 +35,10 @@ class radiomicAnalyser:
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
+        # these are populated by self.loadImageData()
+        self.StudyDate = ''
+        self.StudyTime = ''
+
         self.annotationUID = self.__getAnnotationUID()
 
         print(' ')
@@ -44,7 +47,7 @@ class radiomicAnalyser:
 
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
-    # been computed in a particular way.  E.g. when shuffling the voxels I use 'shuffled_' as a prefix
+    # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
     def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
@@ -108,7 +111,12 @@ class radiomicAnalyser:
         # insert or append featureVector just computed
         if hasattr(self, 'featureVector'):
             for key in featureVector.keys():
-                self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
+                # only add featureKeyPrefixStr to actual features, i.e. not to keys called "diagnostics_..." which are a
+                # record of the extraction parameters
+                if 'diagnostics' in key:
+                    self.featureVector[key] = featureVector[key]
+                else:
+                    self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
         else:
             self.featureVector = featureVector
 
@@ -376,6 +384,10 @@ class radiomicAnalyser:
         # get list of unique referencedSOPInstanceUIDs
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
 
+        # get study date and time so they can go into the csv output
+        self.StudyDate = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']]).StudyDate
+        self.StudyTime = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']]).StudyTime
+
         for refSopInstUID in refSopInstUIDs:
             dcm = pydicom.dcmread(self.sopInstDict[refSopInstUID])
 
@@ -419,13 +431,13 @@ class radiomicAnalyser:
         self.imageData = imageData
 
     ##########################
-    def shuffleVoxels(self, fixedSeed=True):
+    def permuteVoxels(self, fixedSeed=True):
         if fixedSeed:
-            random.seed(42)
+            np.random.seed(seed=42)
         # get pixel values inside mask
-        voxels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
-        self.imageData["imageVolume"][self.mask == 1] = random.shuffle(voxels)
-
+        voxels = self.imageData["imageVolume"][np.where(self.mask == 1)]
+        idxShuffle = np.random.permutation(len(voxels))
+        self.imageData["imageVolume"][np.where(self.mask == 1)] = voxels[idxShuffle]
 
 
     ##########################
@@ -720,6 +732,12 @@ class radiomicAnalyser:
 
         headers.append("source_DCM_SeriesInstanceUID")
         row.append(self.ReferencedSeriesUID)
+
+        headers.append("source_DCM_StudyDate")
+        row.append(self.StudyDate)
+
+        headers.append("source_DCM_StudyTime")
+        row.append(self.StudyTime)
 
         headers.append("source_annotationUID")
         row.append(self.annotationUID)
