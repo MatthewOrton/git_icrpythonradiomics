@@ -35,9 +35,12 @@ class radiomicAnalyser:
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
 
-        # these are populated by self.loadImageData()
+        # these are populated by self.loadImageData() because they are taken from the image dicom files
         self.StudyDate = ''
         self.StudyTime = ''
+        self.Manufacturer = ''
+        self.ManufacturerModelName = ''
+        self.ModalitySpecificParameters = {}
 
         self.annotationUID = self.__getAnnotationUID()
 
@@ -385,8 +388,36 @@ class radiomicAnalyser:
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
 
         # get study date and time so they can go into the csv output
-        self.StudyDate = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']]).StudyDate
-        self.StudyTime = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']]).StudyTime
+        dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
+        self.StudyDate = dcm.StudyDate
+        self.StudyTime = dcm.StudyTime
+        self.Manufacturer = dcm.Manufacturer
+        self.ManufacturerModelName = dcm.ManufacturerModelName
+
+        # get any Modality-specific parameters that might be useful for checking for confounders
+        sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
+        sopClassUid_MRImageStorage = '1.2.840.10008.5.1.4.1.1.4'
+        if dcm.SOPClassUID == sopClassUid_CTImageStorage:
+            parameterList = ['KVP',
+                             'XRayTubeCurrent',
+                             'ConvolutionKernel',
+                             'ScanOptions',
+                             'SliceThickness',
+                             'SpacingBetweenSlices',
+                             'ContrastBolusAgent',
+                             'ContrastBolusVolume',
+                             'PatientWeight']
+
+        elif dcm.SOPClassUID == sopClassUid_MRImageStorage:
+            # not implemented yet
+            parameterList = []
+        else:
+            parameterList = []
+        for parameter in parameterList:
+            if hasattr(dcm, parameter):
+                self.ModalitySpecificParameters[parameter] = getattr(dcm, parameter)
+            else:
+                self.ModalitySpecificParameters[parameter] = ''
 
         for refSopInstUID in refSopInstUIDs:
             dcm = pydicom.dcmread(self.sopInstDict[refSopInstUID])
@@ -738,6 +769,16 @@ class radiomicAnalyser:
 
         headers.append("source_DCM_StudyTime")
         row.append(self.StudyTime)
+
+        headers.append("source_DCM_Manufacturer")
+        row.append(self.Manufacturer)
+
+        headers.append("source_DCM_ManufacturerModelName")
+        row.append(self.ManufacturerModelName)
+
+        for item in self.ModalitySpecificParameters.items():
+            headers.append("source_DCM_"+item[0])
+            row.append(item[1])
 
         headers.append("source_annotationUID")
         row.append(self.annotationUID)
