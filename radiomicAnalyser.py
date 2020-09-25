@@ -36,6 +36,7 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description = ' '
 
         # these are populated by self.loadImageData() because they are taken from the image dicom files
+        self.PatientName = ''
         self.StudyDate = ''
         self.StudyTime = ''
         self.Manufacturer = ''
@@ -389,6 +390,7 @@ class radiomicAnalyser:
 
         # get study date and time so they can go into the csv output
         dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
+        self.PatientName = dcm.PatientName
         self.StudyDate = dcm.StudyDate
         self.StudyTime = dcm.StudyTime
         self.Manufacturer = dcm.Manufacturer
@@ -748,6 +750,8 @@ class radiomicAnalyser:
 
         # split file name to get metadata (naughty!)
         fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
+        if fileParts[0] != self.PatientName:
+            raise Exception('subject ID taken from assessor file name does not match PatientName from DICOM!')
 
         headers.append("source_XNAT_subject")
         row.append(fileParts[0])
