@@ -13,6 +13,8 @@ import yaml
 import cv2
 import nibabel as nib
 from skimage import draw
+import warnings
+
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -36,7 +38,11 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description = ' '
 
         # these are populated by self.loadImageData() because they are taken from the image dicom files
-        self.PatientName = ''
+        # PatientName and dcmPatientName should usually be the same, but sometimes we need to change the patientName that
+        # gets written into the spreadsheet when there is a typo/mismatch between the dicom info and other data sources.
+        # Need to record the dcmPatientName so we can cross-reference back to the source data if necessary
+        self.StudyPatientName = ''
+        self.dcmPatientName = ''
         self.StudyDate = ''
         self.StudyTime = ''
         self.Manufacturer = ''
@@ -142,9 +148,19 @@ class radiomicAnalyser:
     # to account for anomalies in the data.  For example, in the TracerX study some patients had two tumours, and this
     # is indicated in the clinical data spreadsheet with the subject name, e.g. K114_L and K114_R.  We need a way to reflect
     # this in the .csv output, so by changing the assessor filename manually we can change these fields in the output file
+    #
+    # FUNCTION DEPRACATED USE editPatientName instead
     def editAssessorFileName(self, newAssessorFileName):
+        warnings.warn("Using this method not advised, use editPatientName instead!")
         self.assessorFileName = newAssessorFileName
 
+    ##########################
+    # Sometimes typos or other errors creep in and the patientName metadata (in the dicom/annotation/XNAT metadata) does not agree
+    # with other data sources (e.g. clinical data spreadsheets).
+    # We write out the dcmPatientName (which should always correspond to the actual source data) so we can cross-reference the radiomicAnalyser() outputs to the source data.
+    # We also write out the StudyPatientName, which we can edit manually if we need to
+    def editStudyPatientName(self, newPatientName):
+        self.StudyPatientName = newPatientName
 
 
     ##########################
@@ -390,7 +406,8 @@ class radiomicAnalyser:
 
         # get study date and time so they can go into the csv output
         dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
-        self.PatientName = dcm.PatientName
+        self.StudyPatientName = dcm.PatientName
+        self.dcmPatientName = dcm.PatientName # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
         self.StudyDate = dcm.StudyDate
         self.StudyTime = dcm.StudyTime
         self.Manufacturer = dcm.Manufacturer
@@ -748,13 +765,10 @@ class radiomicAnalyser:
         headers.append("source_XNAT_project")
         row.append(self.projectStr)
 
-        # split file name to get metadata (naughty!)
-        fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
-        if fileParts[0] != self.PatientName:
-            print('\033[1;31;48m WARNING: Patient name mismatch: file name = ' + fileParts[0] + ', DICOM metadata = ' + str(self.PatientName) +'\033[0;30;48m')
+        headers.append("StudyPatientName")
+        row.append(self.StudyPatientName)
 
-        headers.append("source_XNAT_subject")
-        row.append(self.PatientName)
+        fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
 
         headers.append("source_XNAT_session")
         row.append(fileParts[1])
@@ -764,6 +778,9 @@ class radiomicAnalyser:
 
         headers.append("source_XNAT_assessor")
         row.append(fileParts[3].split('.')[0])
+
+        headers.append("source_DCM_PatientName")
+        row.append(self.dcmPatientName)
 
         headers.append("source_DCM_SeriesInstanceUID")
         row.append(self.ReferencedSeriesUID)
