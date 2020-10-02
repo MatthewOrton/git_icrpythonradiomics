@@ -2,15 +2,17 @@ import pydicom
 from xml.dom import minidom
 import numpy as np
 from itertools import compress
-from PIL import Image, ImageDraw
 from scipy.linalg import circulant
 from scipy.ndimage import label
 import matplotlib.pyplot as plt
 import os
+import re
 import SimpleITK as sitk
 import csv
 import yaml
 import cv2
+import nibabel as nib
+from skimage import draw
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
 import sys
@@ -21,7 +23,7 @@ from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict, fineGrid=5, assessorSubtractFileName=None):
+    def __init__(self, project, assessorFileName, sopInstDict=None, assessorSubtractFileName=None):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -30,16 +32,27 @@ class radiomicAnalyser:
         self.outputPath = project["outputPath"]
         self.roiObjectLabelFilter = project["roiObjectLabelFilter"]
         self.paramFileName = project["paramFileName"]
-        self.fineGrid = fineGrid
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
+
+        # these are populated by self.loadImageData() because they are taken from the image dicom files
+        self.PatientName = ''
+        self.StudyDate = ''
+        self.StudyTime = ''
+        self.Manufacturer = ''
+        self.ManufacturerModelName = ''
+        self.ModalitySpecificParameters = {}
+
+        self.annotationUID = self.__getAnnotationUID()
 
         print(' ')
         print('Processing : ' + self.assessorFileName)
 
 
     ##########################
-    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False):
+    # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
+    # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
+    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -99,22 +112,39 @@ class radiomicAnalyser:
                         probabilityOfCounts_2 = probabilityOfCounts_2/probabilityOfCounts_2.sum()
                         featureVector["entropyOfCounts_dim2_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_2,probabilityOfCounts_2)))
 
-        # # rename keys if indicated
-        # if ((oldDictStr is not '') and (newDictStr is not '')):
-        #     featureVectorRenamed = OrderedDict()
-        #     for key in featureVector.keys():
-        #         newKey = str(key).replace(oldDictStr, newDictStr)
-        #         featureVectorRenamed[newKey] = featureVector[key]
-        #     featureVector = featureVectorRenamed
-
         # insert or append featureVector just computed
         if hasattr(self, 'featureVector'):
             for key in featureVector.keys():
-                self.featureVector[key] = featureVector[key]
+                # only add featureKeyPrefixStr to actual features, i.e. not to keys called "diagnostics_..." which are a
+                # record of the extraction parameters
+                if 'diagnostics' in key:
+                    self.featureVector[key] = featureVector[key]
+                else:
+                    self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
         else:
             self.featureVector = featureVector
 
         print('Radiomic features computed')
+
+
+
+    ##########################
+    def setParamFileName(self, paramFileName):
+        self.paramFileName = paramFileName
+
+    ##########################
+    def setOutputPath(self, outputPath):
+        self.outputPath = outputPath
+
+    ##########################
+    # This function is necessary because the XNAT metadata on subject/session/scan/assessor are only available via the filename
+    # These details are included in the .csv file that is written with self.saveResult(), but sometimes they need adjusting
+    # to account for anomalies in the data.  For example, in the TracerX study some patients had two tumours, and this
+    # is indicated in the clinical data spreadsheet with the subject name, e.g. K114_L and K114_R.  We need a way to reflect
+    # this in the .csv output, so by changing the assessor filename manually we can change these fields in the output file
+    def editAssessorFileName(self, newAssessorFileName):
+        self.assessorFileName = newAssessorFileName
+
 
 
     ##########################
@@ -123,7 +153,18 @@ class radiomicAnalyser:
             self.__createMaskAimXml()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'dcm':
             self.__createMaskDcmSeg()
+        if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nii':
+            self.mask = np.asarray(nib.load(self.assessorFileName).get_data())
         # others to come
+
+    ##########################
+    def removeOutliersFromMask(self, outlierWidth=3):
+        pixels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+        mu = np.mean(pixels)
+        sg = np.std(pixels)
+        imageVolumeOutliers = np.logical_or(self.imageData["imageVolume"]<(mu-outlierWidth*sg),
+                                       self.imageData["imageVolume"]>(mu+outlierWidth*sg))
+        self.mask[np.logical_and(self.mask==1.0, imageVolumeOutliers)] = 0.0
 
     ##########################
     # method to enable mask to be altered outside the object, typically to enable experimentation
@@ -182,8 +223,8 @@ class radiomicAnalyser:
                 raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
             referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
             referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-            if (self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != referencedSegmentLabel):
-                continue
+            if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
+                    continue
             thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
             sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
             self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
@@ -202,13 +243,25 @@ class radiomicAnalyser:
         self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
 
 
+##########################
+    def removeFromMask(self, assessorRemove, dilateDiameter=0):
+        xDOM = minidom.parse(assessorRemove)
+        self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
+        if dilateDiameter>0:
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
+            for n in range(self.maskDelete.shape[0]):
+                self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
+        self.maskOriginal = self.mask
+        self.mask = np.logical_and(self.mask.astype(bool), np.logical_not(self.maskDelete.astype(bool))).astype(float)
+
+
 ##############################
     def __createMaskAimXmlArrayFromContours(self, xDOM, checkRoiLabel=True):
         if xDOM.getElementsByTagName('ImageAnnotation').length != 1:
             raise Exception("AIM file containing more than one ImageAnnotation not supported yet!")
         xImageAnnotation = xDOM.getElementsByTagName('ImageAnnotation').item(0)
         roiLabel = xImageAnnotation.getElementsByTagName('name').item(0).getAttribute('value')
-        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (self.roiObjectLabelFilter != roiLabel):
+        if (checkRoiLabel and self.roiObjectLabelFilter is not None) and (re.match(self.roiObjectLabelFilter, roiLabel) is None):
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
             return
         mask = np.zeros(self.imageData["imageVolume"].shape)
@@ -224,21 +277,23 @@ class radiomicAnalyser:
             index = []
             x = []
             y = []
-            # make mask for matrix size 5x larger than original, then for each 5x5 section final mask will be set if
-            # more than half of
+            # Note that scikit-image and matplotlib take the *center* of the top-left pixel to be at (0,0).
+            # On the other hand, AIM takes the top-left corner of the top-left pixel to be at (0,0), and gives the
+            # polygon co-ordinates as pixel counts (not patient co-ordinates).  Hence the - 0.5 
             for sc in xScc.item(0).getElementsByTagName('TwoDimensionSpatialCoordinate'):
                 index.append(int(sc.getElementsByTagName('coordinateIndex').item(0).getAttribute('value')))
                 thisX = float(sc.getElementsByTagName('x').item(0).getAttribute('value'))
                 thisY = float(sc.getElementsByTagName('y').item(0).getAttribute('value'))
-                x.append(thisX)
-                y.append(thisY)
+                x.append(thisX - 0.5)
+                y.append(thisY - 0.5)
 
-            poly = [self.fineGrid*val for pair in zip(x, y) for val in pair]
-            img = Image.new('L', (self.fineGrid*mask.shape[1], self.fineGrid*mask.shape[2]), 0)
-            ImageDraw.Draw(img).polygon(poly, outline=1, fill=2)
-            thisMask = self.__pixelBlockAverage(np.array(img)) > 1
-            mask[sliceIdx,:,:] = np.logical_or(mask[sliceIdx,:,:], thisMask)
-            # keep contours so we can display on thumbnail
+            # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+            # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+            # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+            fill_row_coords, fill_col_coords = draw.polygon(y, x, (mask.shape[1], mask.shape[2]))
+            mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
+
+            # keep contours so we can display on thumbnail if we need to
             contours[sliceIdx].append({"x":x, "y":y})
         return mask, contours
 
@@ -284,6 +339,7 @@ class radiomicAnalyser:
 
 
     # function to average over NxN blocks of pixels
+    # legacy from old way of computing mask, but have left in all the same
     ##########################
     def __pixelBlockAverage(self, x):
         vr = np.zeros(x.shape[0])
@@ -296,7 +352,28 @@ class radiomicAnalyser:
         return np.dot(Vr, np.dot(x, np.transpose(Vc))) / (self.fineGrid * self.fineGrid)
 
     ##########################
-    def loadImageData(self):
+    def loadImageData(self, fileType=None, fileName = None):
+
+        # direct loading if specified
+        if fileType is 'nii':
+            imageData = {}
+            imageData["imageVolume"] = np.asarray(nib.load(fileName).get_data())
+            # for nifti metadata just put in default values for now
+            imageData["imagePositionPatient"] = []
+            imageData["sopInstUID"] = []
+            for n in range(imageData["imageVolume"].shape[2]):
+                imageData["imagePositionPatient"].append([0, 0, 2*n]) # this is hard-coded for IBSI digital phantom for now
+                imageData["sopInstUID"].append(str(n))
+            imageData["imageOrientationPatient"] = [0, 0, 1, 0, 1, 0] # default
+            imageData["pixelSpacing"] = [2, 2] # this is hard-coded for IBSI digital phantom for now
+            imageData["windowCenter"] = 0
+            imageData["windowWidth"] = 100
+            self.imageData = imageData
+            # some other metadata from the assessor that needs to be present
+            self.ReferencedSeriesUID = ''
+            self.ImageAnnotationCollection_Description = ''
+            self.roiObjectLabelFound = ''
+            return
 
         refUID = self.__getReferencedUIDs()
 
@@ -310,6 +387,39 @@ class radiomicAnalyser:
 
         # get list of unique referencedSOPInstanceUIDs
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
+
+        # get study date and time so they can go into the csv output
+        dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
+        self.PatientName = dcm.PatientName
+        self.StudyDate = dcm.StudyDate
+        self.StudyTime = dcm.StudyTime
+        self.Manufacturer = dcm.Manufacturer
+        self.ManufacturerModelName = dcm.ManufacturerModelName
+
+        # get any Modality-specific parameters that might be useful for checking for confounders
+        sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
+        sopClassUid_MRImageStorage = '1.2.840.10008.5.1.4.1.1.4'
+        if dcm.SOPClassUID == sopClassUid_CTImageStorage:
+            parameterList = ['KVP',
+                             'XRayTubeCurrent',
+                             'ConvolutionKernel',
+                             'ScanOptions',
+                             'SliceThickness',
+                             'SpacingBetweenSlices',
+                             'ContrastBolusAgent',
+                             'ContrastBolusVolume',
+                             'PatientWeight']
+
+        elif dcm.SOPClassUID == sopClassUid_MRImageStorage:
+            # not implemented yet
+            parameterList = []
+        else:
+            parameterList = []
+        for parameter in parameterList:
+            if hasattr(dcm, parameter):
+                self.ModalitySpecificParameters[parameter] = getattr(dcm, parameter)
+            else:
+                self.ModalitySpecificParameters[parameter] = ''
 
         for refSopInstUID in refSopInstUIDs:
             dcm = pydicom.dcmread(self.sopInstDict[refSopInstUID])
@@ -353,6 +463,15 @@ class radiomicAnalyser:
         imageData["imagePositionPatient"] = [x for _, x in sorted(zip(sliceLocation, imagePositionPatient))]
         self.imageData = imageData
 
+    ##########################
+    def permuteVoxels(self, fixedSeed=True):
+        if fixedSeed:
+            np.random.seed(seed=42)
+        # get pixel values inside mask
+        voxels = self.imageData["imageVolume"][np.where(self.mask == 1)]
+        idxShuffle = np.random.permutation(len(voxels))
+        self.imageData["imageVolume"][np.where(self.mask == 1)] = voxels[idxShuffle]
+
 
     ##########################
     def __getReferencedUIDs(self):
@@ -362,7 +481,7 @@ class radiomicAnalyser:
             references = self.__getReferencedUIDsAimXml()
         # select segments matching segmentLabel input
         if self.roiObjectLabelFilter is not None:
-            indToKeep = [x["label"] == self.roiObjectLabelFilter for x in references]
+            indToKeep = [re.match(self.roiObjectLabelFilter, x["label"]) is not None for x in references]
             if not any(indToKeep):
                 references = []
             else:
@@ -460,11 +579,13 @@ class radiomicAnalyser:
         elif self.assessorStyle['format'].lower() == 'xml':
             xDOM = minidom.parse(self.assessorFileName)
             annotationUID = xDOM.getElementsByTagName('ImageAnnotation').item(0).getElementsByTagName('uniqueIdentifier').item(0).getAttribute('root')
+        elif self.assessorStyle['format'].lower() == 'nii':
+            annotationUID = ''
         return annotationUID
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True):
 
         def findMaskEdges(mask):
 
@@ -522,16 +643,18 @@ class radiomicAnalyser:
         fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         linewidth = 0.2
-        minX = np.inf
-        maxX = -np.inf
-        minY = np.inf
-        maxY = -np.inf
-        for contours in self.contours:
-            for contour in contours:
-                minX = np.min([minX, np.min(contour["x"])])
-                maxX = np.max([maxX, np.max(contour["x"])])
-                minY = np.min([minY, np.min(contour["y"])])
-                maxY = np.max([maxY, np.max(contour["y"])])
+        dim1 = np.where(np.sum(self.mask, axis=(0, 2)) > 0)
+        dim2 = np.where(np.sum(self.mask, axis=(0, 1)) > 0)
+        minX = min(dim2)
+        maxX = max(dim2)
+        minY = min(dim1)
+        maxY = max(dim1)
+        # for contours in self.contours:
+        #     for contour in contours:
+        #         minX = np.min([minX, np.min(contour["x"])])
+        #         maxX = np.max([maxX, np.max(contour["x"])])
+        #         minY = np.min([minY, np.min(contour["y"])])
+        #         maxY = np.max([maxY, np.max(contour["y"])])
         # make spans at least 60 pixels, then add 20
         midX = 0.5*(minX + maxX)
         minX = np.min([midX - 30, minX])-20
@@ -549,18 +672,38 @@ class radiomicAnalyser:
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
                 ax.imshow(self.imageData["imageVolume"][n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
-                #contours = self.contours[n]
-                # for contour in contours:
-                #     ax.plot([x-0.5 for x in contour["x"]], [y-0.5 for y in contour["y"]], 'c', linewidth=linewidth*2)
+                if showContours:
+                    contours = self.contours[n]
+                    for contour in contours:
+                        ax.plot([x for x in contour["x"]], [y for y in contour["y"]], 'c', linewidth=linewidth)
+                    contoursDelete = self.contoursDelete[n]
+                    for contourDelete in contoursDelete:
+                        ax.plot([x for x in contourDelete["x"]], [y for y in contourDelete["y"]], 'r', linewidth=linewidth)
                 maskHere = self.mask[n,:,:]
-                idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
-                ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
-                ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
-                ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
-                ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                if showMaskBoundary:
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
+                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
+                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
+                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
+                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                    # overplot holes if there are present
+                    if hasattr(self, 'maskDelete'):
+                        maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                                linewidth=linewidth)
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
                 ax.set_xlim(minX, maxX)
@@ -581,7 +724,7 @@ class radiomicAnalyser:
                 ax.spines['left'].set_visible(False)
                 ax.spines['right'].set_visible(False)
 
-        plt.gcf().suptitle(titleStr, fontsize=10)
+        plt.gcf().suptitle(titleStr, fontsize=8)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
         if not os.path.exists(fullPath):
@@ -596,7 +739,7 @@ class radiomicAnalyser:
         return outputName
 
     ##########################
-    def saveResult(self, writeMode='w'):
+    def saveResult(self, writeMode='w', includeHeader=True):
 
         headers = []
         row = []
@@ -607,6 +750,8 @@ class radiomicAnalyser:
 
         # split file name to get metadata (naughty!)
         fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
+        if fileParts[0] != self.PatientName:
+            raise Exception('subject ID taken from assessor file name does not match PatientName from DICOM!')
 
         headers.append("source_XNAT_subject")
         row.append(fileParts[0])
@@ -623,8 +768,27 @@ class radiomicAnalyser:
         headers.append("source_DCM_SeriesInstanceUID")
         row.append(self.ReferencedSeriesUID)
 
+        headers.append("source_DCM_StudyDate")
+        row.append(self.StudyDate)
+
+        headers.append("source_DCM_StudyTime")
+        row.append(self.StudyTime)
+
+        # mark some columns with string "QueryConfounder" then we can use this later in an automatic
+        # check to filter these columns and check if there are any unwanted correlations/clusterings
+        # with these parameters
+        headers.append("source_DCM_Manufacturer_QueryConfounder")
+        row.append(self.Manufacturer)
+
+        headers.append("source_DCM_ManufacturerModelName_QueryConfounder")
+        row.append(self.ManufacturerModelName)
+
+        for key, value in self.ModalitySpecificParameters.items():
+            headers.append("source_DCM_"+key+"_QueryConfounder")
+            row.append(value)
+
         headers.append("source_annotationUID")
-        row.append(self.__getAnnotationUID())
+        row.append(self.annotationUID)
 
         headers.append("source_ImageAnnotationCollectionDescription")
         row.append(self.ImageAnnotationCollection_Description)
@@ -648,7 +812,7 @@ class radiomicAnalyser:
 
         with open(outputName, writeMode) as fo:
             writer = csv.writer(fo, lineterminator='\n')
-            if writeMode=='w':
+            if includeHeader:
                 writer.writerow(headers)
             writer.writerow(row)
 

@@ -113,7 +113,7 @@ class xnatDownloader:
     ##########################
     # Download listed scans.
     # Folder structure is: experiment>scan>image and is the same as for downloadSubjectList()
-    def scanList_downloadScans(self, scanList):
+    def scanList_downloadScans(self, scanList, scanFormat='ID'):
         for scan in scanList:
             experimentID = scan[0]
             scanID = scan[1]
@@ -122,8 +122,13 @@ class xnatDownloader:
                 with xnat.connect(server=self.serverURL) as self.xnat_session:
                     if experimentID in self.xnat_session.projects[self.projectStr].experiments.keys():
                         xnat_experiment = self.xnat_session.projects[self.projectStr].experiments[experimentID]
-                        if scanID in xnat_experiment.scans.data.keys():
-                            self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID)
+                        if scanFormat is 'ID':
+                            if scanID in xnat_experiment.scans.data.keys():
+                                self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID)
+                        elif scanFormat is 'scanDescription':
+                            for item in xnat_experiment.scans.data.items():
+                                if scanID == item[1].type:
+                                   self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0])
                         else:
                             print('Scan not found!')
                     else:
@@ -142,6 +147,15 @@ class xnatDownloader:
                 experimentList.append(xnat_experiment.label)
         return experimentList
 
+
+    ##########################
+    def getExperimentList_Subject(self, subject):
+        experimentList = []
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            xnat_experiments = xnat_session.projects[self.projectStr].subjects[subject].experiments
+            for xnat_experiment in xnat_experiments.values():
+                experimentList.append(xnat_experiment.label)
+        return experimentList
 
     ##########################
     def getSubjectList_Project(self):
@@ -461,10 +475,17 @@ class xnatDownloader:
                     {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[
                         0].ReferencedSOPInstanceUID,
                      "label": label})
-            return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID, 
+
+            # have had dicom seg files with no sopInstanceUID, so catch this rather than crash!
+            if hasattr(dcm,'SopInstanceUID'):
+                sopInstUid = dcm.SopInstanceUID
+            else:
+                sopInstUid = 'SopInstanceUID not found!'
+
+            return {"referencedSeriesUID": dcm.ReferencedSeriesSequence[0].SeriesInstanceUID,
                     "referencedSopInstances": annotationObjectList,
                     "roiCollectionLabel": dcm.SeriesDescription,
-                    "annotationUID": dcm.SopInstanceUID}
+                    "annotationUID": sopInstUid}
 
     ##########################
     def __getReferencedUIDsAndLabelsAimXml(self, assessorFileName):
