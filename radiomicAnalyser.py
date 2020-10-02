@@ -751,10 +751,10 @@ class radiomicAnalyser:
         # split file name to get metadata (naughty!)
         fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
         if fileParts[0] != self.PatientName:
-            raise Exception('subject ID taken from assessor file name does not match PatientName from DICOM!')
+            print('\033[1;31;48m WARNING: Patient name mismatch: file name = ' + fileParts[0] + ', DICOM metadata = ' + str(self.PatientName) +'\033[0;30;48m')
 
         headers.append("source_XNAT_subject")
-        row.append(fileParts[0])
+        row.append(self.PatientName)
 
         headers.append("source_XNAT_session")
         row.append(fileParts[1])
