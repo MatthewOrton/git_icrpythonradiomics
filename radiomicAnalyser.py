@@ -774,15 +774,18 @@ class radiomicAnalyser:
         headers.append("source_DCM_StudyTime")
         row.append(self.StudyTime)
 
-        headers.append("source_DCM_Manufacturer")
+        # mark some columns with string "QueryConfounder" then we can use this later in an automatic
+        # check to filter these columns and check if there are any unwanted correlations/clusterings
+        # with these parameters
+        headers.append("source_DCM_Manufacturer_QueryConfounder")
         row.append(self.Manufacturer)
 
-        headers.append("source_DCM_ManufacturerModelName")
+        headers.append("source_DCM_ManufacturerModelName_QueryConfounder")
         row.append(self.ManufacturerModelName)
 
-        for item in self.ModalitySpecificParameters.items():
-            headers.append("source_DCM_"+item[0])
-            row.append(item[1])
+        for key, value in self.ModalitySpecificParameters.items():
+            headers.append("source_DCM_"+key+"_QueryConfounder")
+            row.append(value)
 
         headers.append("source_annotationUID")
         row.append(self.annotationUID)
