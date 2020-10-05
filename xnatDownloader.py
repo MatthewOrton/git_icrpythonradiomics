@@ -171,6 +171,11 @@ class xnatDownloader:
 
 
     ##########################
+    def setRoiCollectionLabelFilter(self, roiCollectionLabelFilter):
+        self.roiCollectionLabelFilter = roiCollectionLabelFilter
+
+
+    ##########################
     def subjectList_downloadAssessors(self, subjectList):
 
         # For all listed subjects, download all scans from associated experiments
