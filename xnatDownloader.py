@@ -8,6 +8,7 @@ from xml.dom import minidom
 from numpy import unique
 from itertools import compress
 from re import compile
+import pathlib
 
 def myStrJoin(strList):
     return '__II__'.join(strList)
@@ -51,9 +52,9 @@ class xnatDownloader:
             blitz = input("Download folder exists.  Delete contents? : ")
             if blitz == 'y':
                 rmtree(self.downloadPath)
-                os.mkdir(self.downloadPath)
+                pathlib.Path(self.downloadPath).mkdir(parents=True)
         else:
-            os.mkdir(self.downloadPath)
+            pathlib.Path(self.downloadPath).mkdir(parents=True)
 
 
     ##########################
