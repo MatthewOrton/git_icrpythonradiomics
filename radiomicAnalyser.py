@@ -14,6 +14,7 @@ import cv2
 import nibabel as nib
 from skimage import draw
 import warnings
+import copy
 
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
@@ -171,7 +172,10 @@ class radiomicAnalyser:
             self.__createMaskDcmSeg()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nii':
             self.mask = np.asarray(nib.load(self.assessorFileName).get_data())
-        # others to come
+        # ... others to come
+        #
+        # keep a copy of the original mask
+        self.maskOriginal = copy.deepcopy(self.mask)
 
     ##########################
     def removeOutliersFromMask(self, outlierWidth=3):
@@ -260,14 +264,21 @@ class radiomicAnalyser:
 
 
 ##########################
-    def removeFromMask(self, assessorRemove, dilateDiameter=0):
-        xDOM = minidom.parse(assessorRemove)
-        self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
-        if dilateDiameter>0:
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
-            for n in range(self.maskDelete.shape[0]):
-                self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
-        self.maskOriginal = self.mask
+    def removeFromMask(self, objRemove, dilateDiameter=0):
+        if isinstance(objRemove, str):
+            # if objRemove is a string, then assume is a filename of an AIM xml file
+            xDOM = minidom.parse(objRemove)
+            self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
+            if dilateDiameter>0:
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
+                for n in range(self.maskDelete.shape[0]):
+                    self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
+        elif type(objRemove) is np.ndarray:
+            # if objRemove is a numpy array then just use it
+            if hasattr(self, 'maskDelete'):
+                self.maskDelete = np.logical_or(self.maskDelete.astype(bool), objRemove.astype(bool))
+            else:
+                self.maskDelete = objRemove.astype(bool)
         self.mask = np.logical_and(self.mask.astype(bool), np.logical_not(self.maskDelete.astype(bool))).astype(float)
 
 
@@ -479,6 +490,10 @@ class radiomicAnalyser:
         imageData["imageVolume"] = np.asarray(imSlice)
         imageData["imagePositionPatient"] = [x for _, x in sorted(zip(sliceLocation, imagePositionPatient))]
         self.imageData = imageData
+        # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
+        # we need to reset back
+        self.imageDataOriginal = copy.deepcopy(self.imageData)
+
 
     ##########################
     def permuteVoxels(self, fixedSeed=True):
@@ -746,9 +761,7 @@ class radiomicAnalyser:
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        if fileStr is not '':
-            fileStr = '__'+fileStr
-        fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
+        fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
         outputName = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(outputName,  papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('Thumbnail saved '+outputName)
