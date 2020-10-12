@@ -675,12 +675,18 @@ class radiomicAnalyser:
         fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         linewidth = 0.2
-        dim1 = np.where(np.sum(self.mask, axis=(0, 2)) > 0)
-        dim2 = np.where(np.sum(self.mask, axis=(0, 1)) > 0)
-        minX = min(dim2)
-        maxX = max(dim2)
-        minY = min(dim1)
-        maxY = max(dim1)
+        if np.sum(self.mask)==0:
+            minX = 0
+            maxX = self.mask.shape[2]
+            minY = 0
+            maxY = self.mask.shape[1]
+        else:
+            dim1 = np.where(np.sum(self.mask, axis=(0, 2)) > 0)
+            dim2 = np.where(np.sum(self.mask, axis=(0, 1)) > 0)
+            minX = min(dim2)
+            maxX = max(dim2)
+            minY = min(dim1)
+            maxY = max(dim1)
         # for contours in self.contours:
         #     for contour in contours:
         #         minX = np.min([minX, np.min(contour["x"])])
