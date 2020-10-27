@@ -761,7 +761,7 @@ class radiomicAnalyser:
             roiObjectLabel = self.roiObjectLabelFound[0]
         else:
             roiObjectLabel = str(self.roiObjectLabelFound)
-        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel  + self.ImageAnnotationCollection_Description
+        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel + '  '  + self.ImageAnnotationCollection_Description
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=8)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
