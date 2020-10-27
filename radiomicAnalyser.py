@@ -702,12 +702,6 @@ class radiomicAnalyser:
         minY = np.min([midY - 30, minY])-20
         maxY = np.max([midY + 30, maxY])+20
 
-        if len(self.roiObjectLabelFound)==1:
-            roiObjectLabel = self.roiObjectLabelFound[0]
-        else:
-            roiObjectLabel = str(self.roiObjectLabelFound)
-        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel
-
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
                 ax.imshow(self.imageData["imageVolume"][n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
@@ -763,6 +757,11 @@ class radiomicAnalyser:
                 ax.spines['left'].set_visible(False)
                 ax.spines['right'].set_visible(False)
 
+        if len(self.roiObjectLabelFound)==1:
+            roiObjectLabel = self.roiObjectLabelFound[0]
+        else:
+            roiObjectLabel = str(self.roiObjectLabelFound)
+        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel  + self.ImageAnnotationCollection_Description
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=8)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
