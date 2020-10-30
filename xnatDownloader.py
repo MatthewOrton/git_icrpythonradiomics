@@ -37,6 +37,13 @@ class xnatDownloader:
         self.roiLabelFilter = roiLabelFilter
         self.xnat_session = None
 
+        # check that project exists
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            if self.projectStr not in xnat_session.projects.keys():
+                print(' ')
+                print(self.projectStr+" not found on "+self.serverURL)
+                exit()
+
         self.downloadPathZip = os.path.join(self.downloadPath, 'temp.zip')
         if os.path.exists(self.downloadPathZip):
             os.remove(self.downloadPathZip)
@@ -164,14 +171,9 @@ class xnatDownloader:
         # Get list of all subjects in project.
         subjectList = []
         with xnat.connect(server=self.serverURL) as xnat_session:
-            if self.projectStr in xnat_session.projects.keys():
-                xnat_subjects = xnat_session.projects[self.projectStr].subjects
-                for xnat_subject in xnat_subjects.values():
-                    subjectList.append(xnat_subject.label)
-            else:
-                print(' ')
-                print(self.projectStr+" not found on "+self.serverURL)
-                exit()
+            xnat_subjects = xnat_session.projects[self.projectStr].subjects
+            for xnat_subject in xnat_subjects.values():
+                subjectList.append(xnat_subject.label)
         subjectList.sort()
         return subjectList
 
