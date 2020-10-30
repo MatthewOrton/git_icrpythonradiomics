@@ -164,9 +164,14 @@ class xnatDownloader:
         # Get list of all subjects in project.
         subjectList = []
         with xnat.connect(server=self.serverURL) as xnat_session:
-            xnat_subjects = xnat_session.projects[self.projectStr].subjects
-            for xnat_subject in xnat_subjects.values():
-                subjectList.append(xnat_subject.label)
+            if self.projectStr in xnat_session.projects.keys():
+                xnat_subjects = xnat_session.projects[self.projectStr].subjects
+                for xnat_subject in xnat_subjects.values():
+                    subjectList.append(xnat_subject.label)
+            else:
+                print(' ')
+                print(self.projectStr+" not found on "+self.serverURL)
+                exit()
         subjectList.sort()
         return subjectList
 
