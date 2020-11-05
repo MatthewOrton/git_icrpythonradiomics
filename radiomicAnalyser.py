@@ -618,7 +618,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra=''):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False):
 
         def findMaskEdges(mask):
 
@@ -723,7 +723,7 @@ class radiomicAnalyser:
                     idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
                     ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
                     # overplot holes if there are present
-                    if hasattr(self, 'maskDelete'):
+                    if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
                         maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
                         idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
                         ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
