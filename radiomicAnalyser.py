@@ -618,7 +618,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None):
 
         def findMaskEdges(mask):
 
@@ -702,6 +702,15 @@ class radiomicAnalyser:
         minY = np.min([midY - 30, minY])-20
         maxY = np.max([midY + 30, maxY])+20
 
+        if axisLimits is not None:
+            minX = axisLimits["minX"]
+            maxX = axisLimits["maxX"]
+            minY = axisLimits["minY"]
+            maxY = axisLimits["maxY"]
+
+        # get current axis limits and include in the variable we will output from the function
+        out = {"axisLimits": {"minX": minX, "maxX": maxX, "minY": minY, "maxY": maxY}}
+
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
                 ax.imshow(self.imageData["imageVolume"][n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
@@ -768,11 +777,11 @@ class radiomicAnalyser:
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
-        outputName = os.path.join(fullPath, fileStr)
-        plt.gcf().savefig(outputName,  papertype='a4', orientation='landscape', format='pdf', dpi=1200)
-        print('Thumbnail saved '+outputName)
+        out["fileName"] = os.path.join(fullPath, fileStr)
+        plt.gcf().savefig(out["fileName"],  papertype='a4', orientation='landscape', format='pdf', dpi=1200)
+        print('Thumbnail saved '+out["fileName"])
         plt.close()
-        return outputName
+        return out
 
     ##########################
     def saveResult(self, writeMode='w', includeHeader=True):
