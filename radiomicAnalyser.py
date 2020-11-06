@@ -134,6 +134,9 @@ class radiomicAnalyser:
         print('Radiomic features computed')
 
 
+    ##########################
+    def setAssessorFileName(self, assessorFileName):
+        self.assessorFileName = assessorFileName
 
     ##########################
     def setParamFileName(self, paramFileName):
