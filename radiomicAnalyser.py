@@ -179,6 +179,8 @@ class radiomicAnalyser:
         #
         # keep a copy of the original mask
         self.maskOriginal = copy.deepcopy(self.mask)
+        # run this to make sure self.roiObjectLabelFound is updated
+        self.__getReferencedUIDs()
 
     ##########################
     def removeOutliersFromMask(self, outlierWidth=3):
