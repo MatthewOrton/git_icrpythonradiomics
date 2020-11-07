@@ -238,6 +238,8 @@ class radiomicAnalyser:
         if len(maskHere.shape) == 2:
             maskHere = np.reshape(maskHere, (1, maskHere.shape[1], maskHere.shape[0]))  # the dimension order needs testing!!
 
+        self.ImageAnnotationCollection_Description = dcmSeg.ContentLabel
+
         self.mask = np.zeros(self.imageData["imageVolume"].shape)
         maskCount = 0
         for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
