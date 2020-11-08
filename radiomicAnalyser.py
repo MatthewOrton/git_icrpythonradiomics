@@ -758,13 +758,14 @@ class radiomicAnalyser:
                 ax.set_xlim(minX, maxX)
                 ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==nPlt-1:
-                yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
-                binParams = self.__getBinParameters()
-                if 'binWidth' in binParams:
-                    bins = np.arange(vmin, vmax, binParams['binWidth'])
-                elif 'binCount' in binParams:
-                    bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
-                ax.hist(yRef, bins, density=True, histtype='stepfilled')
+                if np.sum(self.mask)>0:
+                    yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+                    binParams = self.__getBinParameters()
+                    if 'binWidth' in binParams:
+                        bins = np.arange(vmin, vmax, binParams['binWidth'])
+                    elif 'binCount' in binParams:
+                        bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
+                    ax.hist(yRef, bins, density=True, histtype='stepfilled')
             else:
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
