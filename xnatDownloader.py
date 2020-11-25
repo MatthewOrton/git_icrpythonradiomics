@@ -357,7 +357,7 @@ class xnatDownloader:
             for xnat_assessor in xnat_experiment.assessors.values():
 
                 # skip if doesn't match requested collectionType
-                if self.assessorStyle["type"] != xnat_assessor.data["collectionType"]:
+                if self.assessorStyle["type"] and (self.assessorStyle["type"] != xnat_assessor.data["collectionType"]):
                     continue
 
                 # download and unzip
