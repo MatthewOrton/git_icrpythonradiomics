@@ -92,7 +92,9 @@ class radiomicAnalyser:
 
         segmentNumber = int(1)
         featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
-        self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
+        getProbMat = getattr(extractor, "getProbabilityMatrices", None)
+        if callable(getProbMat):
+            self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
 
         if computeEntropyOfCounts:
             for key in self.probabilityMatrices:
