@@ -707,13 +707,15 @@ class radiomicAnalyser:
         #         maxX = np.max([maxX, np.max(contour["x"])])
         #         minY = np.min([minY, np.min(contour["y"])])
         #         maxY = np.max([maxY, np.max(contour["y"])])
-        # make spans at least 60 pixels, then add 20
+        # make spans at least minSize pixels, then add padSize
+        minSize = 40
+        padSize = 10
         midX = 0.5*(minX + maxX)
-        minX = np.min([midX - 30, minX])-20
-        maxX = np.max([midX + 30, maxX])+20
+        minX = np.min([midX - minSize/2, minX])-padSize
+        maxX = np.max([midX + minSize/2, maxX])+padSize
         midY = 0.5*(minY + maxY)
-        minY = np.min([midY - 30, minY])-20
-        maxY = np.max([midY + 30, maxY])+20
+        minY = np.min([midY - minSize/2, minY])-padSize
+        maxY = np.max([midY + minSize/2, maxY])+padSize
 
         if axisLimits is not None:
             minX = axisLimits["minX"]
@@ -785,7 +787,7 @@ class radiomicAnalyser:
         else:
             roiObjectLabel = str(self.roiObjectLabelFound)
         titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel + '  '  + self.ImageAnnotationCollection_Description
-        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=8)
+        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
         if not os.path.exists(fullPath):
