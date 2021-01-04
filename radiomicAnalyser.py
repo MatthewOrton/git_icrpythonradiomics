@@ -631,7 +631,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None):
 
         def findMaskEdges(mask):
 
@@ -768,11 +768,12 @@ class radiomicAnalyser:
             elif n==nPlt-1:
                 if np.sum(self.mask)>0:
                     yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
-                    binParams = self.__getBinParameters()
-                    if 'binWidth' in binParams:
-                        bins = np.arange(vmin, vmax, binParams['binWidth'])
-                    elif 'binCount' in binParams:
-                        bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
+                    if bins is None:
+                        binParams = self.__getBinParameters()
+                        if 'binWidth' in binParams:
+                            bins = np.arange(vmin, vmax, binParams['binWidth'])
+                        elif 'binCount' in binParams:
+                            bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
                     ax.hist(yRef, bins, density=True, histtype='stepfilled')
             else:
                 ax.xaxis.set_visible(False)
