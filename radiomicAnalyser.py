@@ -92,6 +92,47 @@ class radiomicAnalyser:
 
         segmentNumber = int(1)
         featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
+
+        # if extraction with separate directions has been used, then
+        # post-process the corresponding features so each value is returned as a new feature with a feature name that includes
+        # the direction (angle) of the GLCM, and normalised using the P_glcm_0 and P_glcm_inf values
+        #
+        # get array of directions (angles)
+        featNameAngles = [s for s in list(featureVector.keys()) if "SeparateDirections_Angles" in s]
+        if featNameAngles:
+            # just use the first as the others should be the same
+            angles = featureVector[featNameAngles[0]]
+
+            # convert angles array to list of strings that we can use as postfixes for the feature names
+            anglesStr = [('_' + str(s[0]) + str(s[1]) + str(s[2])).replace('-', 'n') for s in angles]
+            # special for the P_glcm_inf one that is returned with angles = [-100, -100, -100]
+            anglesStr = [s.replace('_n100n100n100','_inf') for s in anglesStr]
+
+            # get names for features with separate directions, and remove the Angles features
+            featNamesSepDir = [s for s in list(featureVector.keys()) if "SeparateDirections" in s]
+            featNamesSepDir = [s for s in featNamesSepDir if "SeparateDirections_Angles" not in s]
+
+            # get indices of the actual feature values, i.e. not the _000 or _inf values that are used for
+            # normalisation
+            idxValues = list(range(len(angles)))
+            idxValues.remove(anglesStr.index('_000'))
+            idxValues.remove(anglesStr.index('_inf'))
+
+            # normalise the main values for each feature using the P_glcm_0 and P_glcm_inf values, and replace the
+            # original item in featureVector (which is an array) with a collection of items whose names indicate which
+            # direction they were calculated with
+            for feat in featNamesSepDir:
+                thisFeature = featureVector[feat]
+                f0 = thisFeature[anglesStr.index('_000')]
+                fInf = thisFeature[anglesStr.index('_inf')]
+                thisFeature[idxValues] = (thisFeature[idxValues] - fInf)/(f0 - fInf)
+                # remove original item from featureVector (this item is an array, which we can't output to a .csv very easily)
+                featureVector.pop(feat)
+                # put back thisFeature using the original name and the anglesStr postFix
+                for n, value in enumerate(thisFeature):
+                    thisName = feat+anglesStr[n]
+                    featureVector[thisName] = value
+
         getProbMat = getattr(extractor, "getProbabilityMatrices", None)
         if callable(getProbMat):
             self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
