@@ -132,6 +132,9 @@ class radiomicAnalyser:
                 for n, value in enumerate(thisFeature):
                     thisName = feat+anglesStr[n]
                     featureVector[thisName] = value
+            # remove the angles features as they are no longer needed
+            for fa in featNameAngles:
+                featureVector.pop(fa)
 
         getProbMat = getattr(extractor, "getProbabilityMatrices", None)
         if callable(getProbMat):
