@@ -170,9 +170,7 @@ class radiomicAnalyser:
         # insert or append featureVector just computed
         if hasattr(self, 'featureVector'):
             for key in featureVector.keys():
-                # previous extraction will have completed the diagnostics parts of the output, so don't do them again
-                if 'diagnostics' not in key:
-                    self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
+                self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
         else:
             self.featureVector = {}
             for key in featureVector.keys():
