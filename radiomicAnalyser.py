@@ -168,18 +168,11 @@ class radiomicAnalyser:
                         featureVector["entropyOfCounts_dim2_" + key] += np.sum(-np.log(np.power(probabilityOfCounts_2,probabilityOfCounts_2)))
 
         # insert or append featureVector just computed
-        if hasattr(self, 'featureVector'):
-            for key in featureVector.keys():
-                self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
-        else:
+        if not hasattr(self, 'featureVector'):
             self.featureVector = {}
-            for key in featureVector.keys():
-                # only add featureKeyPrefixStr to actual features, i.e. not to keys called "diagnostics_..." which are a
-                # record of the extraction parameters
-                if 'diagnostics' in key:
-                    self.featureVector[key] = featureVector[key]
-                else:
-                    self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
+
+        for key in featureVector.keys():
+            self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
 
         print('Radiomic features computed')
 
