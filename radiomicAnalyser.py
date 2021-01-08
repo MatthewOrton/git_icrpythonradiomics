@@ -4,6 +4,7 @@ import numpy as np
 from itertools import compress
 from scipy.linalg import circulant
 from scipy.ndimage import label
+from scipy.io import savemat
 import matplotlib.pyplot as plt
 import os
 import re
@@ -15,6 +16,7 @@ import nibabel as nib
 from skimage import draw
 import warnings
 import copy
+
 
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
@@ -175,6 +177,12 @@ class radiomicAnalyser:
             self.featureVector[featureKeyPrefixStr+key] = featureVector[key]
 
         print('Radiomic features computed')
+
+    def saveImageAndMaskToMatlab(self):
+        imData = self.imageData["imageVolume"]
+        mask = self.mask
+        matFileName = os.path.join(self.outputPath,'matlabData',self.assessorFileName+'.mat')
+        savemat(matFileName, {'imData':imData, 'mask':mask})
 
 
     ##########################
