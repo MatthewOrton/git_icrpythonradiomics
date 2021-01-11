@@ -480,8 +480,8 @@ class radiomicAnalyser:
 
         # get study date and time so they can go into the csv output
         dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
-        self.StudyPatientName = print(dcm.PatientName)
-        self.dcmPatientName = print(dcm.PatientName) # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
+        self.StudyPatientName = str(dcm.PatientName)
+        self.dcmPatientName = str(dcm.PatientName) # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
         self.StudyDate = dcm.StudyDate
         self.StudyTime = dcm.StudyTime
         self.Manufacturer = dcm.Manufacturer
