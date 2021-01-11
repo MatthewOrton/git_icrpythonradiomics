@@ -181,8 +181,12 @@ class radiomicAnalyser:
     def saveImageAndMaskToMatlab(self):
         imData = self.imageData["imageVolume"]
         mask = self.mask
-        matFileName = os.path.join(self.outputPath,'matlabData',self.assessorFileName+'.mat')
-        savemat(matFileName, {'imData':imData, 'mask':mask})
+        matlabFolderName = os.path.join(self.outputPath,'matlabData')
+        if not os.path.exists(matlabFolderName):
+            os.mkdir(matlabFolderName)
+        matlabFileName = os.path.join(matlabFolderName,os.path.split(self.assessorFileName)[1].split('.')[0]+'.mat')
+        savemat(matlabFileName, {'imData':imData, 'mask':mask})
+        print('Written matlab file to : '+matlabFileName)
 
 
     ##########################
