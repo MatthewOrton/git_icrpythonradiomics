@@ -680,7 +680,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStr = None, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None):
 
         def findMaskEdges(mask):
 
@@ -836,7 +836,8 @@ class radiomicAnalyser:
             roiObjectLabel = self.roiObjectLabelFound[0]
         else:
             roiObjectLabel = str(self.roiObjectLabelFound)
-        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel + '  '  + self.ImageAnnotationCollection_Description
+        if titleStr is None:
+            titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel + '  '  + self.ImageAnnotationCollection_Description
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
 
         fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
