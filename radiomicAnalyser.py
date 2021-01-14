@@ -391,18 +391,24 @@ class radiomicAnalyser:
         for rcs in rts.ROIContourSequence:
             print(rcs.ReferencedROINumber)
             if int(rcs.ReferencedROINumber) == int(roiNumber):
-                thisROIContourSequence = rcs
+                thisContourSequence = rcs.ContourSequence
+
+        for cs in thisContourSequence:
+            if len(cs.ContourImageSequence) != 1:
+                raise Exception("DICOM RT file containing (individual) contour that references more than one image not supported!")
+
+            referencedSOPInstanceUID = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
+            coords = np.array([float(x) for x in cs.ContourData])
+            polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+            
+            origin = np.array([float(t) for t in dcm.ImagePositionPatient])
+            spacing = np.array([float(t) for t in dcm.PixelSpacing])
+            xNorm = np.array([float(t) for t in dcm.ImageOrientationPatient[0:3]])
+            yNorm = np.array([float(t) for t in dcm.ImageOrientationPatient[3:6]])
+            xImage = np.dot(polygonPatient - origin, xNorm) / spacing[0]
+            yImage = np.dot(polygonPatient - origin, yNorm) / spacing[1]
 
 
-        # for rcs in rts.ROIContourSequence:
-        #     label = roiNameDict[rcs.ReferencedROINumber]
-        #     for cs in rcs.ContourSequence:
-        #         if len(cs.ContourImageSequence) != 1:
-        #             raise Exception(
-        #                 "DICOM RT file containing (individual) contour that references more than one image not supported!")
-        #         annotationObjectList.append(
-        #             {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
-        #              "label": label})
 
     ##########################
     def removeFromMask(self, objRemove, dilateDiameter=0):
