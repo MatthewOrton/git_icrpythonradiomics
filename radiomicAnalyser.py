@@ -389,10 +389,11 @@ class radiomicAnalyser:
             raise Exception("Cannot find roiObjectLabel in DICOM RT file!")
 
         for rcs in rts.ROIContourSequence:
-            print(rcs.ReferencedROINumber)
             if int(rcs.ReferencedROINumber) == int(roiNumber):
                 thisContourSequence = rcs.ContourSequence
 
+        mask = np.zeros(self.imageData["imageVolume"].shape)
+        contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
         for cs in thisContourSequence:
             if len(cs.ContourImageSequence) != 1:
                 raise Exception("DICOM RT file containing (individual) contour that references more than one image not supported!")
@@ -400,14 +401,25 @@ class radiomicAnalyser:
             referencedSOPInstanceUID = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
             coords = np.array([float(x) for x in cs.ContourData])
             polygonPatient = coords.reshape((int(len(coords) / 3), 3))
-            
-            origin = np.array([float(t) for t in dcm.ImagePositionPatient])
-            spacing = np.array([float(t) for t in dcm.PixelSpacing])
-            xNorm = np.array([float(t) for t in dcm.ImageOrientationPatient[0:3]])
-            yNorm = np.array([float(t) for t in dcm.ImageOrientationPatient[3:6]])
-            xImage = np.dot(polygonPatient - origin, xNorm) / spacing[0]
-            yImage = np.dot(polygonPatient - origin, yNorm) / spacing[1]
 
+            sliceIdx = self.imageData["sopInstUID"].index(referencedSOPInstanceUID)
+            origin = self.imageData["imagePositionPatient"][sliceIdx]
+            spacing = self.imageData["pixelSpacing"]
+            xNorm = self.imageData["imageOrientationPatient"][0:3]
+            yNorm = self.imageData["imageOrientationPatient"][3:6]
+            x = np.dot(polygonPatient - origin, xNorm) / spacing[0]
+            y = np.dot(polygonPatient - origin, yNorm) / spacing[1]
+
+            # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+            # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+            # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+            fill_row_coords, fill_col_coords = draw.polygon(y, x, (mask.shape[1], mask.shape[2]))
+            mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
+
+            # keep contours so we can display on thumbnail if we need to
+            contours[sliceIdx].append({"x":x, "y":y})
+
+        return mask, contours
 
 
     ##########################
@@ -578,14 +590,20 @@ class radiomicAnalyser:
         # assuming these are the same for all referenced SOPInstances
         imageData["imageOrientationPatient"] = [float(x) for x in dcm.ImageOrientationPatient]
         imageData["pixelSpacing"] = [float(x) for x in dcm.PixelSpacing]
-        if type(dcm.WindowCenter) is pydicom.multival.MultiValue:
-            imageData["windowCenter"] = dcm.WindowCenter[0]
+        if hasattr(dcm,'WindowCenter'):
+            if type(dcm.WindowCenter) is pydicom.multival.MultiValue:
+                imageData["windowCenter"] = dcm.WindowCenter[0]
+            else:
+                imageData["windowCenter"] = dcm.WindowCenter
         else:
-            imageData["windowCenter"] = dcm.WindowCenter
-        if type(dcm.WindowWidth) is pydicom.multival.MultiValue:
-            imageData["windowWidth"] = dcm.WindowWidth[0]
+            imageData["windowCenter"] = 0
+        if hasattr(dcm, 'WindowWidth'):
+            if type(dcm.WindowWidth) is pydicom.multival.MultiValue:
+                imageData["windowWidth"] = dcm.WindowWidth[0]
+            else:
+                imageData["windowWidth"] = dcm.WindowWidth
         else:
-            imageData["windowWidth"] = dcm.WindowWidth
+            imageData["windowWidth"] = 100
 
         # sort on slice location and store items in self
         sliceLocation = [x[2] for x in imagePositionPatient]
@@ -724,7 +742,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails'):
 
         def findMaskEdges(mask):
 
@@ -879,7 +897,7 @@ class radiomicAnalyser:
         titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound + '  '  + self.ImageAnnotationCollection_Description
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
 
-        fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
+        fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
