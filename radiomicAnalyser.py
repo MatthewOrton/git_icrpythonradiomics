@@ -228,6 +228,8 @@ class radiomicAnalyser:
             self.__createMaskAimXml()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'dcm':
             self.__createMaskDcmSeg()
+        if self.assessorStyle['type'].lower() == 'aim' and self.assessorStyle['format'].lower() == 'dcm':
+            self.__createMaskDcmRts()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nii':
             self.mask = np.asarray(nib.load(self.assessorFileName).get_data())
         # ... others to come
@@ -317,35 +319,14 @@ class radiomicAnalyser:
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
 
 
-
-
-##########################
+    ##########################
     def __createMaskAimXml(self):
         xDOM = minidom.parse(self.assessorFileName)
         self.ImageAnnotationCollection_Description = xDOM.getElementsByTagName('description').item(0).getAttribute('value')
         self.mask, self.contours = self.__createMaskAimXmlArrayFromContours(xDOM)
 
 
-##########################
-    def removeFromMask(self, objRemove, dilateDiameter=0):
-        if isinstance(objRemove, str):
-            # if objRemove is a string, then assume is a filename of an AIM xml file
-            xDOM = minidom.parse(objRemove)
-            self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
-            if dilateDiameter>0:
-                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
-                for n in range(self.maskDelete.shape[0]):
-                    self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
-        elif type(objRemove) is np.ndarray:
-            # if objRemove is a numpy array then just use it
-            if hasattr(self, 'maskDelete'):
-                self.maskDelete = np.logical_or(self.maskDelete.astype(bool), objRemove.astype(bool))
-            else:
-                self.maskDelete = objRemove.astype(bool)
-        self.mask = np.logical_and(self.mask.astype(bool), np.logical_not(self.maskDelete.astype(bool))).astype(float)
-
-
-##############################
+    ##############################
     def __createMaskAimXmlArrayFromContours(self, xDOM, checkRoiLabel=True):
         if xDOM.getElementsByTagName('ImageAnnotation').length != 1:
             raise Exception("AIM file containing more than one ImageAnnotation not supported yet!")
@@ -387,6 +368,78 @@ class radiomicAnalyser:
             contours[sliceIdx].append({"x":x, "y":y})
         return mask, contours
 
+    ##########################
+    def __createMaskDcmRts(self):
+        rts = pydicom.dcmread(self.assessorFileName)
+        self.ImageAnnotationCollection_Description =  rts.StructureSetLabel # name of attribute in self is just to fit with AIM file naming.
+        self.mask, self.contours = self.__createMaskDcmRtsArrayFromContours(rts)
+
+    ##########################
+    def __createMaskDcmRtsArrayFromContours(self, rts, checkRoiLabel=True):
+
+        if len(rts.ROIContourSequence)>1 and not checkRoiLabel:
+            raise Exception("DICOM RT file containing more than one ROI not currently supported!")
+
+        roiNumber = None
+        for ssr in rts.StructureSetROISequence:
+            if ssr.ROIName == self.roiObjectLabelFound:
+                roiNumber = ssr.ROINumber
+                break
+        if roiNumber is None:
+            raise Exception("Cannot find roiObjectLabel in DICOM RT file!")
+
+        for rcs in rts.ROIContourSequence:
+            if int(rcs.ReferencedROINumber) == int(roiNumber):
+                thisContourSequence = rcs.ContourSequence
+
+        mask = np.zeros(self.imageData["imageVolume"].shape)
+        contours = [[] for _ in range(self.imageData["imageVolume"].shape[0])]
+        for cs in thisContourSequence:
+            if len(cs.ContourImageSequence) != 1:
+                raise Exception("DICOM RT file containing (individual) contour that references more than one image not supported!")
+
+            referencedSOPInstanceUID = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
+            coords = np.array([float(x) for x in cs.ContourData])
+            polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+
+            sliceIdx = self.imageData["sopInstUID"].index(referencedSOPInstanceUID)
+            origin = self.imageData["imagePositionPatient"][sliceIdx]
+            spacing = self.imageData["pixelSpacing"]
+            xNorm = self.imageData["imageOrientationPatient"][0:3]
+            yNorm = self.imageData["imageOrientationPatient"][3:6]
+            x = np.dot(polygonPatient - origin, xNorm) / spacing[0]
+            y = np.dot(polygonPatient - origin, yNorm) / spacing[1]
+
+            # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+            # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+            # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+            fill_row_coords, fill_col_coords = draw.polygon(y, x, (mask.shape[1], mask.shape[2]))
+            mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
+
+            # keep contours so we can display on thumbnail if we need to
+            contours[sliceIdx].append({"x":x, "y":y})
+
+        return mask, contours
+
+
+    ##########################
+    def removeFromMask(self, objRemove, dilateDiameter=0):
+        if isinstance(objRemove, str):
+            # if objRemove is a string, then assume is a filename of an AIM xml file
+            xDOM = minidom.parse(objRemove)
+            self.maskDelete, self.contoursDelete = self.__createMaskAimXmlArrayFromContours(xDOM)
+            if dilateDiameter > 0:
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilateDiameter, dilateDiameter))
+                for n in range(self.maskDelete.shape[0]):
+                    self.maskDelete[n, :, :] = cv2.dilate(self.maskDelete[n, :, :], kernel)
+        elif type(objRemove) is np.ndarray:
+            # if objRemove is a numpy array then just use it
+            if hasattr(self, 'maskDelete'):
+                self.maskDelete = np.logical_or(self.maskDelete.astype(bool), objRemove.astype(bool))
+            else:
+                self.maskDelete = objRemove.astype(bool)
+        self.mask = np.logical_and(self.mask.astype(bool), np.logical_not(self.maskDelete.astype(bool))).astype(
+            float)
 
     ##########################
     def cleanMask(self, minArea=4):
@@ -537,14 +590,20 @@ class radiomicAnalyser:
         # assuming these are the same for all referenced SOPInstances
         imageData["imageOrientationPatient"] = [float(x) for x in dcm.ImageOrientationPatient]
         imageData["pixelSpacing"] = [float(x) for x in dcm.PixelSpacing]
-        if type(dcm.WindowCenter) is pydicom.multival.MultiValue:
-            imageData["windowCenter"] = dcm.WindowCenter[0]
+        if hasattr(dcm,'WindowCenter'):
+            if type(dcm.WindowCenter) is pydicom.multival.MultiValue:
+                imageData["windowCenter"] = dcm.WindowCenter[0]
+            else:
+                imageData["windowCenter"] = dcm.WindowCenter
         else:
-            imageData["windowCenter"] = dcm.WindowCenter
-        if type(dcm.WindowWidth) is pydicom.multival.MultiValue:
-            imageData["windowWidth"] = dcm.WindowWidth[0]
+            imageData["windowCenter"] = 0
+        if hasattr(dcm, 'WindowWidth'):
+            if type(dcm.WindowWidth) is pydicom.multival.MultiValue:
+                imageData["windowWidth"] = dcm.WindowWidth[0]
+            else:
+                imageData["windowWidth"] = dcm.WindowWidth
         else:
-            imageData["windowWidth"] = dcm.WindowWidth
+            imageData["windowWidth"] = 100
 
         # sort on slice location and store items in self
         sliceLocation = [x[2] for x in imagePositionPatient]
@@ -581,7 +640,10 @@ class radiomicAnalyser:
                 references = []
             else:
                 references = list(compress(references, indToKeep))
-        self.roiObjectLabelFound = list(set([x["label"] for x in references]))
+        roiObjectLabelFound = list(set([x["label"] for x in references]))
+        if len(roiObjectLabelFound)>1:
+            raise Exception("More than one roiObject selected from DICOM RT file - only one currently supported. Use more specific roiObjectLabelFilter string.")
+        self.roiObjectLabelFound = roiObjectLabelFound[0]
         print('         ' + str(self.roiObjectLabelFound))
         return references
 
@@ -680,7 +742,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStr = None, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None):
+    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails'):
 
         def findMaskEdges(mask):
 
@@ -832,15 +894,11 @@ class radiomicAnalyser:
                 ax.spines['left'].set_visible(False)
                 ax.spines['right'].set_visible(False)
 
-        if len(self.roiObjectLabelFound)==1:
-            roiObjectLabel = self.roiObjectLabelFound[0]
-        else:
-            roiObjectLabel = str(self.roiObjectLabelFound)
-        if titleStr is None:
-            titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel + '  '  + self.ImageAnnotationCollection_Description
+
+        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound + '  '  + self.ImageAnnotationCollection_Description
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
 
-        fullPath = os.path.join(self.outputPath, 'roiThumbnails', 'subjects')
+        fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
@@ -942,11 +1000,7 @@ class radiomicAnalyser:
         for n in range(self.probabilityMatrices[imageType + "_glcm"].shape[3]):
             fig.add_subplot(rows, columns, n+1)
             if n==0:
-                if len(self.roiObjectLabelFound) == 1:
-                    roiObjectLabel = self.roiObjectLabelFound[0]
-                else:
-                    roiObjectLabel = str(self.roiObjectLabelFound)
-                plt.title(os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + roiObjectLabel, fontsize=8, fontdict = {'horizontalalignment': 'left'})
+                plt.title(os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound, fontsize=8, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM')
