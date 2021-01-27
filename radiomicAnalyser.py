@@ -23,8 +23,8 @@ import copy
 import sys
 sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
 
-from radiomics import featureextractor, setVerbosity
-#from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced
+#from radiomics import featureextractor, setVerbosity
+from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced, setVerbosity
 
 class radiomicAnalyser:
 
@@ -85,8 +85,8 @@ class radiomicAnalyser:
         imageSitk.SetSpacing(maskSitk.GetSpacing())
         imageSitk.SetDirection(maskSitk.GetDirection())
 
-        extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
-        #extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
+        #extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
+        extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         setVerbosity(40)
 
         if binWidthOverRide is not None:
