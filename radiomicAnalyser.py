@@ -480,6 +480,59 @@ class radiomicAnalyser:
                     refined_mask[labelled_mask == (thisLabel + 1)] = 0
             self.mask[n, :, :] = 1 - refined_mask
 
+    def removeSmallPositiveRegions(self, minArea=10):
+        # For each slice, clean mask by removing edge voxels with only one neighbour with the same value.
+        # Also, for each slice, remove regions that are below some area threshold
+
+        # remove regions that are below area threshold
+        for n in range(self.mask.shape[0]):
+            labelled_mask, num_labels = label(self.mask[n, :, :] == 1)
+            # remove small regions
+            refined_mask = self.mask[n, :, :]
+            for thisLabel in range(num_labels):
+                labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
+                if labelArea <= minArea:
+                    refined_mask[labelled_mask == (thisLabel + 1)] = 0
+            self.mask[n, :, :] = refined_mask
+
+    def fillHoles(self, minArea=4):
+        # For each slice, clean mask by removing edge voxels with only one neighbour with the same value.
+        # Also, for each slice, remove regions that are below some area threshold
+
+        def cleanOnce(mask, value):
+            # clean voxels that match value
+
+            # initialise and make sure we enter the while loop
+            isolated = np.empty_like(mask, dtype='bool')
+            isolated[np.unravel_index(0, isolated.shape)] = True
+
+            while np.any(isolated):
+                mask0 = mask[:, 1:-1, 1:-1]
+                mask1 = (mask[:, 0:-2, 1:-1] == mask0).astype(int)
+                mask2 = (mask[:, 1:-1, 0:-2] == mask0).astype(int)
+                mask3 = (mask[:, 2:, 1:-1] == mask0).astype(int)
+                mask4 = (mask[:, 1:-1, 2:] == mask0).astype(int)
+                isolated = np.logical_and(np.equal(mask0, value), (mask1 + mask2 + mask3 + mask4) <= 1)
+                mask0[isolated] = not value
+                mask[:, 1:-1, 1:-1] = mask0
+
+            return mask
+
+        # clean isolated false voxels, then isolated true voxels
+        self.mask = cleanOnce(self.mask, False)
+        # self.mask = cleanOnce(self.mask, True)
+
+        # remove regions that are below area threshold
+        for n in range(self.mask.shape[0]):
+            labelled_mask, num_labels = label(self.mask[n, :, :] == 0)
+            # remove small regions
+            refined_mask = 1 - self.mask[n, :, :]
+            for thisLabel in range(num_labels):
+                labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
+                if labelArea <= minArea:
+                    refined_mask[labelled_mask == (thisLabel + 1)] = 0
+            self.mask[n, :, :] = 1 - refined_mask
+
 
     # function to average over NxN blocks of pixels
     # legacy from old way of computing mask, but have left in all the same
