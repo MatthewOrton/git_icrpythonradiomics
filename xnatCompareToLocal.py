@@ -1,14 +1,7 @@
 import os
 import xnat
 import glob
-#import zipfile
 import pydicom
-#from shutil import rmtree
-#from xml.dom import minidom
-#from numpy import unique
-#from itertools import compress
-#from re import compile
-#import pathlib
 
 def myStrJoin(strList):
     return '__II__'.join(strList)
@@ -75,3 +68,16 @@ class xnatCompareToLocal:
                         errorCount += 1
         print(' ')
         print('Number of errors = '+str(errorCount))
+
+    ##########################
+    def compareXnatToLocal(self, nameFilter):
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            xnat_subjects = xnat_session.projects[self.projectName].subjects
+            for xnat_subject in xnat_subjects.values():
+                xnat_experiments = xnat_subject.experiments
+                for xnat_experiment in xnat_experiments.values():
+                    xnat_assessors = xnat_experiment.assessors
+                    for xnat_assessor in xnat_assessors.values():
+                        if nameFilter in xnat_assessor.name:
+                            if len(glob.glob(os.path.join(self.localFolder, '*'+xnat_assessor.label+'*.*')))==0:
+                                print(xnat_subject.label + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
