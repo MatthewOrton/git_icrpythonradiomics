@@ -9,6 +9,7 @@ from numpy import unique
 from itertools import compress
 from re import compile
 import pathlib
+import time
 
 def myStrJoin(strList):
     return '__II__'.join(strList)
@@ -344,6 +345,46 @@ class xnatDownloader:
                 rmtree(badFolder)
 
         print('Complete')
+
+
+
+    ##########################
+    def downloadAssessorsNameExtFiltered(self, nameFilter, extFilter):
+
+        destinFolder = os.path.join(self.downloadPath, 'assessors')
+        if not os.path.exists(destinFolder):
+            os.mkdir(destinFolder)
+
+        subjectList = []
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            xnat_subjects = xnat_session.projects[self.projectStr].subjects
+            for xnat_subject in xnat_subjects.values():
+                subjectList.append(xnat_subject.label)
+        subjectList.sort()
+
+        for subject in subjectList:
+            with xnat.connect(server=self.serverURL) as xnat_session:
+                xnat_experiments = xnat_session.projects[self.projectStr].subjects[subject].experiments
+                for xnat_experiment in xnat_experiments.values():
+                    scanDict = {}
+                    for xnat_scan in xnat_experiment.scans.values():
+                        scanDict[xnat_scan.uid] = xnat_scan
+                    xnat_assessors = xnat_experiment.assessors
+                    for xnat_assessor in xnat_assessors.values():
+                        if nameFilter in xnat_assessor.name:
+                            for n, fileName in enumerate(list(xnat_assessor.files.data.keys())):
+                                if extFilter.lower() == fileName.split('.')[1].lower():
+                                    tempFile = os.path.join(destinFolder, 'temp.'+extFilter)
+                                    print(' ')
+                                    print(subject +' // '+ xnat_experiment.label +' // '+ xnat_assessor.label +' // '+ xnat_assessor.name)
+                                    xnat_assessor.files[n].download(tempFile)
+                                    references = self.__getReferencedUIDsAndLabels(tempFile)
+                                    scanID = scanDict[references["referencedSeriesUID"]].id
+                                    newFileName = myStrJoin([subject, xnat_experiment.label, scanID, xnat_assessor.label])
+                                    newFileName = os.path.join(destinFolder, newFileName+'.'+extFilter)
+                                    os.rename(tempFile, newFileName)
+
+
 
 
 
