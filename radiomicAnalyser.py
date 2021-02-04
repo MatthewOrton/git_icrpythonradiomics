@@ -921,6 +921,8 @@ class radiomicAnalyser:
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
+        fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
+
         out["fileName"] = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(out["fileName"],  papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('Thumbnail saved '+out["fileName"])
@@ -1056,6 +1058,8 @@ class radiomicAnalyser:
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'probabilityMatrices_' + imageType + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
+        fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
+        
         outputName = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(outputName, papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('probabilityMatrices saved ' + outputName)
