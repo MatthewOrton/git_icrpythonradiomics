@@ -996,6 +996,9 @@ class radiomicAnalyser:
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
         fileStr = 'radiomicFeatures__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.csv'
+        
+        fileStr.replace(self.dcmPatientName, self.StudyPatientName)
+
         outputName = os.path.join(fullPath, fileStr)
 
 
