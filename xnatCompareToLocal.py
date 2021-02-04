@@ -130,7 +130,6 @@ class xnatCompareToLocal:
                 for xnat_subject in xnat_subjects.values():
                     subjectList.append(xnat_subject.label)
             subjectList.sort()
-            subjectList = subjectList[50:]
             for subject in subjectList:
                 with xnat.connect(server=self.serverURL) as xnat_session:
                     xnat_experiments = xnat_session.projects[self.projectName].subjects[subject].experiments
@@ -140,3 +139,5 @@ class xnatCompareToLocal:
                             if nameFilter in xnat_assessor.name:
                                 print('Deleting  : ' + subject + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
                                 xnat_assessor.delete(remove_files=True)
+                            else:
+                                print('Found  : ' + subject + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
