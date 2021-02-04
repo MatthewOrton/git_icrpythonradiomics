@@ -14,6 +14,7 @@ import yaml
 import cv2
 import nibabel as nib
 from skimage import draw
+from skimage.segmentation import flood_fill
 import warnings
 import copy
 
@@ -442,7 +443,7 @@ class radiomicAnalyser:
             float)
 
     ##########################
-    def cleanMask(self, minArea=4):
+    def cleanMaskEdge(self):
         # For each slice, clean mask by removing edge voxels with only one neighbour with the same value.
         # Also, for each slice, remove regions that are below some area threshold
 
@@ -467,71 +468,36 @@ class radiomicAnalyser:
 
         # clean isolated false voxels, then isolated true voxels
         self.mask = cleanOnce(self.mask, False)
-        #self.mask = cleanOnce(self.mask, True)
+        self.mask = cleanOnce(self.mask, True)
 
-        # remove regions that are below area threshold
-        for n in range(self.mask.shape[0]):
-            labelled_mask, num_labels = label(self.mask[n, :, :] == 0)
-            # remove small regions
-            refined_mask = 1 - self.mask[n, :, :]
-            for thisLabel in range(num_labels):
-                labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
-                if labelArea <= minArea:
-                    refined_mask[labelled_mask == (thisLabel + 1)] = 0
-            self.mask[n, :, :] = 1 - refined_mask
+    def removeSmallMaskRegions(self, maxArea=10):
+        # Remove any isolated regions that are below a certain area, except if there is only one region on that slice
 
-    def removeSmallPositiveRegions(self, minArea=10):
-        # For each slice, clean mask by removing edge voxels with only one neighbour with the same value.
-        # Also, for each slice, remove regions that are below some area threshold
-
-        # remove regions that are below area threshold
         for n in range(self.mask.shape[0]):
             labelled_mask, num_labels = label(self.mask[n, :, :] == 1)
+            if num_labels==1:
+                continue
             # remove small regions
             refined_mask = self.mask[n, :, :]
             for thisLabel in range(num_labels):
                 labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
-                if labelArea <= minArea:
+                if labelArea <= maxArea:
                     refined_mask[labelled_mask == (thisLabel + 1)] = 0
             self.mask[n, :, :] = refined_mask
 
-    def fillHoles(self, minArea=4):
-        # For each slice, clean mask by removing edge voxels with only one neighbour with the same value.
-        # Also, for each slice, remove regions that are below some area threshold
+    def fillMaskHoles(self, maxArea=float('inf')):
+        # Remove holes that are below area threshold.  Default maxArea set so that
+        # *all* holes will be filled, unless specified otherwise.
 
-        def cleanOnce(mask, value):
-            # clean voxels that match value
-
-            # initialise and make sure we enter the while loop
-            isolated = np.empty_like(mask, dtype='bool')
-            isolated[np.unravel_index(0, isolated.shape)] = True
-
-            while np.any(isolated):
-                mask0 = mask[:, 1:-1, 1:-1]
-                mask1 = (mask[:, 0:-2, 1:-1] == mask0).astype(int)
-                mask2 = (mask[:, 1:-1, 0:-2] == mask0).astype(int)
-                mask3 = (mask[:, 2:, 1:-1] == mask0).astype(int)
-                mask4 = (mask[:, 1:-1, 2:] == mask0).astype(int)
-                isolated = np.logical_and(np.equal(mask0, value), (mask1 + mask2 + mask3 + mask4) <= 1)
-                mask0[isolated] = not value
-                mask[:, 1:-1, 1:-1] = mask0
-
-            return mask
-
-        # clean isolated false voxels, then isolated true voxels
-        self.mask = cleanOnce(self.mask, False)
-        # self.mask = cleanOnce(self.mask, True)
-
-        # remove regions that are below area threshold
         for n in range(self.mask.shape[0]):
-            labelled_mask, num_labels = label(self.mask[n, :, :] == 0)
-            # remove small regions
-            refined_mask = 1 - self.mask[n, :, :]
+            maskHoles = 1-flood_fill(self.mask[n,:,:],(0,0),1)
+            labelled_mask, num_labels = label(maskHoles == 1)
+            # remove small holes
             for thisLabel in range(num_labels):
-                labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
-                if labelArea <= minArea:
-                    refined_mask[labelled_mask == (thisLabel + 1)] = 0
-            self.mask[n, :, :] = 1 - refined_mask
+                maskHere = labelled_mask == (thisLabel+1)
+                if np.sum(maskHere) > maxArea:
+                    maskHoles[maskHere] = 0
+            self.mask[n, :, :] = np.logical_xor(self.mask[n, :, :]==1, maskHoles==1)
 
 
     # function to average over NxN blocks of pixels
