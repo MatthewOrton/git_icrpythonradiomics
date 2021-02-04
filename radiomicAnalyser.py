@@ -499,6 +499,11 @@ class radiomicAnalyser:
                     maskHoles[maskHere] = 0
             self.mask[n, :, :] = np.logical_xor(self.mask[n, :, :]==1, maskHoles==1)
 
+    def selectSlicesMaxAreaMovingAverage(self, width=3):
+        if width is not None and self.mask.shape[0]>width:
+            idx = np.argmax(np.convolve(np.sum(self.mask, axis=(1, 2)), np.ones(width), mode='valid'))
+            self.mask = self.mask[idx:idx + width, :, :]
+            self.imageData["imageVolume"] = self.imageData["imageVolume"][idx:idx + width, :, :]
 
     # function to average over NxN blocks of pixels
     # legacy from old way of computing mask, but have left in all the same
@@ -915,6 +920,7 @@ class radiomicAnalyser:
 
 
         titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound + '  '  + self.ImageAnnotationCollection_Description
+        titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
 
         fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
@@ -1024,7 +1030,10 @@ class radiomicAnalyser:
         for n in range(self.probabilityMatrices[imageType + "_glcm"].shape[3]):
             fig.add_subplot(rows, columns, n+1)
             if n==0:
-                plt.title(os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound, fontsize=8, fontdict = {'horizontalalignment': 'left'})
+                titleStr = os.path.split(self.assessorFileName)[1]
+                titleStr = titleStr.replace('__II__', '  ').split('.')[0]
+                titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
+                plt.title(titleStr + '  ' + self.roiObjectLabelFound, fontsize=8, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM')
@@ -1059,7 +1068,7 @@ class radiomicAnalyser:
             os.makedirs(fullPath)
         fileStr = 'probabilityMatrices_' + imageType + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
-        
+
         outputName = os.path.join(fullPath, fileStr)
         plt.gcf().savefig(outputName, papertype='a4', orientation='landscape', format='pdf', dpi=1200)
         print('probabilityMatrices saved ' + outputName)
