@@ -111,7 +111,7 @@ class xnatCompareToLocal:
                     for xnat_assessor in xnat_assessors.values():
                         if nameFilter in xnat_assessor.name:
                             if len(glob.glob(os.path.join(self.localFolder, '*'+xnat_assessor.label+'*.*')))==0:
-                                print('No local copy   :' + xnat_subject.label + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
+                                print('No local copy   :' + subject + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
                             else:
                                 print('Local copy found: ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
 
