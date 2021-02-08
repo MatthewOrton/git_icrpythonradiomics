@@ -371,12 +371,13 @@ class xnatDownloader:
                         scanDict[xnat_scan.uid] = xnat_scan
                     xnat_assessors = xnat_experiment.assessors
                     for xnat_assessor in xnat_assessors.values():
+                        print('Checking:    ' + subject + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label + ' // ' + xnat_assessor.name)
                         if nameFilter in xnat_assessor.name:
                             for n, fileName in enumerate(list(xnat_assessor.files.data.keys())):
                                 if extFilter.lower() == fileName.split('.')[1].lower():
                                     tempFile = os.path.join(destinFolder, 'temp.'+extFilter)
                                     print(' ')
-                                    print(subject +' // '+ xnat_experiment.label +' // '+ xnat_assessor.label +' // '+ xnat_assessor.name)
+                                    print('Downloading: ' + subject +' // '+ xnat_experiment.label +' // '+ xnat_assessor.label +' // '+ xnat_assessor.name)
                                     xnat_assessor.files[n].download(tempFile)
                                     references = self.__getReferencedUIDsAndLabels(tempFile)
                                     scanID = scanDict[references["referencedSeriesUID"]].id
