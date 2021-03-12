@@ -179,6 +179,8 @@ class radiomicAnalyser:
 
         print('Radiomic features computed')
 
+        return np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
     def saveImageAndMaskToMatlab(self):
         imData = self.imageData["imageVolume"]
         mask = self.mask
@@ -1048,20 +1050,33 @@ class radiomicAnalyser:
             plt.imshow(self.probabilityMatrices[imageType + "_glrlm"][0, :, :, n], aspect='auto')
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
-        fig.add_subplot(rows, 3, 13)
+        fig.add_subplot(rows, 5, 21)
         plt.imshow(self.probabilityMatrices[imageType + "_glszm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLSZM')
 
-        fig.add_subplot(rows, 3, 14)
+        fig.add_subplot(rows, 5, 22)
         plt.imshow(self.probabilityMatrices[imageType + "_gldm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('GLDM')
 
-        fig.add_subplot(rows, 3, 15)
+        fig.add_subplot(rows, 5, 23)
         plt.imshow(self.probabilityMatrices[imageType + "_ngtdm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
         plt.ylabel('NGTDM')
+
+        # rough approximation of 1D histogram
+        pr = np.squeeze(np.sum(self.probabilityMatrices[imageType + "_glcm"][0,:,:,0],axis=1))
+        prFWHM = np.nonzero(pr>(0.05*np.max(pr)))[0]
+
+        fig.add_subplot(rows, 5, 24)
+        plt.plot(pr/np.max(pr))
+        plt.plot(pr>(0.05*np.max(pr)))
+        plt.title(np.max(prFWHM) - np.min(prFWHM))
+
+        fig.add_subplot(rows, 5, 25)
+        plt.plot(pr/np.max(pr))
+        plt.yscale('log')
 
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
