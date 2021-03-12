@@ -136,6 +136,21 @@ class radiomicsFeatureExtractorEnhanced(RadiomicsFeatureExtractor):
             logger.info('Calculating features for %s image', imageTypeName)
             inputImage, inputMask = imageoperations.cropToTumorMask(inputImage, mask, boundingBox,
                                                                     padDistance=kernelRadius)
+
+            import SimpleITK as sitk
+            import numpy as np
+            import matplotlib.pyplot as plt
+            myIm = sitk.GetArrayFromImage(inputImage)
+            myMask = sitk.GetArrayFromImage(inputMask)
+            pixels = np.asarray(myIm[myMask == 1]).reshape(-1, 1)
+
+            myIm[myMask==0] = np.nan
+            f, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(10, 5))
+            ax1.imshow(myIm[0,:,:])
+            ax1.set(title=imageTypeName)
+            ax2.hist(pixels,bins=50)
+            plt.show()
+
             probabilityMatrices.update(self.get_PMatrix(inputImage, inputMask, imageTypeName, **inputKwargs))
 
         logger.debug('Features extracted')
