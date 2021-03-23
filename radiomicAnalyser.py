@@ -94,7 +94,7 @@ class radiomicAnalyser:
             extractor.settings["binWidth"] = binWidthOverRide
 
         segmentNumber = int(1)
-        featureVector = extractor.execute(imageSitk, maskSitk, segmentNumber)
+        featureVector, _ , _ = extractor.execute(imageSitk, maskSitk, segmentNumber)
 
         # if extraction with separate directions has been used, then
         # post-process the corresponding features so each value is returned as a new feature with a feature name that includes
