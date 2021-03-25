@@ -15,7 +15,7 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
-
+import sys
 
 def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2):
 
@@ -41,14 +41,19 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=1234)
     outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=1234)
 
+    # use all the processors unless we are in debug mode
+    n_jobs = -1
+    if getattr(sys, 'gettrace', None)():
+        n_jobs = 1
+
     for n, estimator in enumerate(estimators):
         clf = GridSearchCV(estimator=estimator["model"], param_grid=estimator["p_grid"], cv=inner_cv, refit=True, verbose=0)
-        cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=0, n_jobs=-1)
+        cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=0, n_jobs=n_jobs)
         estimators[n]["result"] = cv_result
 
         # draw roc from outer cv
         fig, ax = plt.subplots()
-        plot_roc_cv(X, y, outer_cv, cv_result, ax, plot_individuals=True, smoothing=500, titleStr=estimator["name"])
+        plot_roc_cv(X, y, outer_cv, cv_result, ax, plot_individuals=True, smoothing=500, titleStr=estimator["name"], staircase=False)
         ax.legend()
         plt.show()
 
@@ -66,8 +71,6 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         print(nested_scores_std)
         print(' ')
 
-    plt.show()
-
     return estimators
 
 
@@ -79,7 +82,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
 #   (iii) interpolating fpr as a function of tpr and averaging the fpr over the cv repeats.
 # Method (i) seems most sensible to me since the ROC is an intrinsic function
 # averaging is one of 'threshold', 'fpr', 'tpr'
-def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, titleStr=''):
+def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, titleStr='', staircase=True):
 
     fpr_g = np.linspace(0, 1, smoothing)
     tpr_i = []
@@ -93,18 +96,31 @@ def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, t
         else:
             y_pred = clf.predict_proba(X[test_index])[:, 1]
 
-        fp, tp, th = roc_curve(y[test_index], y_pred)
+        # for some classifiers y_pred will contain only a few distinct values (e.g. KNN)
+        # in this case the roc_curve function generates a piecewise linear curve, rather than
+        # the usual staircase.  This code adds a tiny bit of noise to the values to force roc_curve
+        # to plot a staircase
+        if len(set(y_pred)) < len(y_pred):
+            # delta is smallest difference between distinct values
+            delta = np.min(np.diff(np.sort(np.array(list(set(y_pred))))))
+            # add uniform noise that is 1000x smaller than delta to force distinct values
+            y_pred = y_pred + 0.001*delta*np.random.uniform(size=y_pred.shape)
+
+        fp, tp, th = roc_curve(y[test_index], y_pred, drop_intermediate=False)
         # interpolate tpr as a function of fpr
         tpr_i.append(np.interp(fpr_g, fp, tp))
         if plot_individuals:
-            #ax.plot(fp, tp, color='silver')
-            # draw lines from the middle of the treads and risers of the original staircase
-            fpd = (0.5*(fp[0:-1] + fp[1:]))[0::2]
-            fpd = np.append(np.insert(fpd, 0, 0), 1)
-            tpd = (0.5*(tp[0:-1] + tp[1:]))[0::2]
-            tpd = np.append(np.insert(tpd, 0, 0), 1)
-            #ax.plot(fpd, tpd, color='black', linewidth=10, alpha=0.005)
-            ax.plot(fpd, tpd, color='black', linewidth=2, alpha=0.3)
+            if staircase:
+                ax.plot(fp, tp, color='silver')
+            else:
+                # draw lines from the middle of the treads and risers of the original staircase
+                fpd = (0.5*(fp[0:-1] + fp[1:]))[0::2]
+                fpd = np.append(np.insert(fpd, 0, 0), 1)
+                tpd = (0.5*(tp[0:-1] + tp[1:]))[0::2]
+                tpd = np.append(np.insert(tpd, 0, 0), 1)
+                #ax.plot(fpd, tpd, color='black', linewidth=10, alpha=0.05)
+                #ax.plot(fpd, tpd, color='black', linewidth=2, alpha=0.3)
+                ax.plot(fpd, tpd, color='silver')
 
     fpr_g = np.append(np.insert(fpr_g, 0, 0), 1)
     tpr_g = np.mean(tpr_i, axis=0)
