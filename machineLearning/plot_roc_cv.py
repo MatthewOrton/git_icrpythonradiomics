@@ -25,7 +25,7 @@ import sys
 #   (iii) interpolating fpr as a function of tpr and averaging the fpr over the cv repeats.
 # Method (i) seems most sensible to me since the ROC is an intrinsic function
 # averaging is one of 'threshold', 'fpr', 'tpr'
-def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, titleStr='', staircase=True):
+def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, titleStr='', staircase=True, linewidth=2, color=None):
 
     fpr_g = np.linspace(0, 1, smoothing)
     tpr_i = []
@@ -61,12 +61,12 @@ def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, t
                 fpd = np.append(np.insert(fpd, 0, 0), 1)
                 tpd = (0.5*(tp[0:-1] + tp[1:]))[0::2]
                 tpd = np.append(np.insert(tpd, 0, 0), 1)
-                #ax.plot(fpd, tpd, color='black', linewidth=10, alpha=0.05)
+                #ax.plot(fpd, tpd, color='black', linewidth=10, alpha=0.005)
                 #ax.plot(fpd, tpd, color='black', linewidth=2, alpha=0.3)
                 ax.plot(fpd, tpd, color='silver')
 
     fpr_g = np.append(np.insert(fpr_g, 0, 0), 1)
     tpr_g = np.mean(tpr_i, axis=0)
     tpr_g = np.append(np.insert(tpr_g, 0, 0), 1)
-    ax.plot(fpr_g, tpr_g, label=titleStr) #, color='green')
+    ax.plot(fpr_g, tpr_g, label=titleStr, linewidth=linewidth, color=color)
     ax.set_title(titleStr)

@@ -18,7 +18,7 @@ from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
 import sys
 from plot_roc_cv import plot_roc_cv
 
-def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, verbose=0):
+def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False):
 
     # default scoring functions
     if not scoring:
@@ -39,7 +39,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     print(' ')
 
     # Compact way of doing nested cross-validation.
-    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=1234)
+    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True) #, random_state=1234)
     outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=1234)
 
     # use all the processors unless we are in debug mode
@@ -54,8 +54,8 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
 
         # draw roc from outer cv
         fig, ax = plt.subplots()
-        plot_roc_cv(X, y, outer_cv, cv_result, ax, plot_individuals=True, smoothing=500, titleStr=estimator["name"], staircase=False)
-        ax.legend()
+        plot_roc_cv(X, y, outer_cv, cv_result, ax, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"], staircase=staircase, linewidth=linewidth, color=color)
+        ax.text(0, 1, 'AUC = ' + str(np.mean(cv_result['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result['test_roc_auc']).round(3)))
         plt.show()
 
         # tidy up nested_scores and key names
