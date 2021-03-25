@@ -18,7 +18,7 @@ from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
 import sys
 from plot_roc_cv import plot_roc_cv
 
-def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2):
+def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, verbose=0):
 
     # default scoring functions
     if not scoring:
@@ -49,7 +49,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
 
     for n, estimator in enumerate(estimators):
         clf = GridSearchCV(estimator=estimator["model"], param_grid=estimator["p_grid"], cv=inner_cv, refit=True, verbose=0)
-        cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=0, n_jobs=n_jobs)
+        cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=verbose, n_jobs=n_jobs)
         estimators[n]["result"] = cv_result
 
         # draw roc from outer cv
