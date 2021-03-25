@@ -15,7 +15,8 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
-from NestedCVclassifier import nestedCVclassification, plot_roc_cv
+from nestedCVclassification import nestedCVclassification
+from plot_roc_cv import plot_roc_cv
 
 np.random.seed(2345)
 
