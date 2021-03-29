@@ -58,6 +58,8 @@ class radiomicAnalyser:
         print(' ')
         print('Processing : ' + self.assessorFileName)
 
+    def getModuleFileLocation(self):
+        return __file__
 
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
