@@ -70,3 +70,4 @@ def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, t
     tpr_g = np.append(np.insert(tpr_g, 0, 0), 1)
     ax.plot(fpr_g, tpr_g, label=titleStr, linewidth=linewidth, color=color)
     ax.set_title(titleStr)
+    ax.plot([0, 1],[0, 1], color='gray')
