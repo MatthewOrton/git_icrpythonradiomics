@@ -15,6 +15,7 @@ from xgboost import XGBClassifier
 from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
+from sklearn.utils import resample
 import sys
 from plot_roc_cv import plot_roc_cv
 
@@ -39,7 +40,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     print(' ')
 
     # Compact way of doing nested cross-validation.
-    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True) #, random_state=1234)
+    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=1234)
     outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=1234)
 
     # use all the processors unless we are in debug mode
@@ -48,9 +49,20 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         n_jobs = 1
 
     for n, estimator in enumerate(estimators):
-        clf = GridSearchCV(estimator=estimator["model"], param_grid=estimator["p_grid"], cv=inner_cv, refit=True, verbose=0)
+        clf = GridSearchCV(estimator=estimator["model"], param_grid=estimator["p_grid"], cv=inner_cv, refit=True, verbose=0, scoring=estimator["scoring"])
         cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=verbose, n_jobs=n_jobs)
         estimators[n]["result"] = cv_result
+
+        # fig0, ax0 = plt.subplots(3, 1)
+        # for ax, res in zip(ax0.reshape(-1), cv_result["estimator"]):
+        #     testScore = np.ma.getdata(res.cv_results_['mean_test_score']).astype('float')
+        #     # ax.plot(np.linspace(-4,4,20), testScore, color='blue')
+        #     # ax.plot(res.cv_results_['param_C'][res.cv_results_['param_penalty']=='l1'], testScore[res.cv_results_['param_penalty']=='l1'], color='blue')
+        #     # ax.plot(res.cv_results_['param_C'][res.cv_results_['param_penalty']=='l2'], testScore[res.cv_results_['param_penalty']=='l2'], color='red')
+        #     ax.plot(res.cv_results_['param_n_neighbors'], testScore)
+        #     #ax.set_xscale("log")
+        #     #ax.set_title(str(res.best_params_["C"]))
+        # plt.show()
 
         # draw roc from outer cv
         fig, ax = plt.subplots()
