@@ -24,8 +24,8 @@ import copy
 import sys
 sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
 
-#from radiomics import featureextractor, setVerbosity
-from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced, setVerbosity
+from radiomics import featureextractor, setVerbosity
+#from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced, setVerbosity
 
 class radiomicAnalyser:
 
@@ -88,15 +88,15 @@ class radiomicAnalyser:
         imageSitk.SetSpacing(maskSitk.GetSpacing())
         imageSitk.SetDirection(maskSitk.GetDirection())
 
-        #extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
-        extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
+        extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
+        #extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         setVerbosity(40)
 
         if binWidthOverRide is not None:
             extractor.settings["binWidth"] = binWidthOverRide
 
         segmentNumber = int(1)
-        featureVector, _ , _ = extractor.execute(imageSitk, maskSitk, segmentNumber)
+        featureVector, self.probabilityMatrices, self.filteredImages = extractor.execute(imageSitk, maskSitk, segmentNumber)
 
         # if extraction with separate directions has been used, then
         # post-process the corresponding features so each value is returned as a new feature with a feature name that includes
@@ -142,10 +142,6 @@ class radiomicAnalyser:
             # remove the angles features as they are no longer needed
             for fa in featNameAngles:
                 featureVector.pop(fa)
-
-        getProbMat = getattr(extractor, "getProbabilityMatrices", None)
-        if callable(getProbMat):
-            self.probabilityMatrices = extractor.getProbabilityMatrices(imageSitk, maskSitk, segmentNumber)
 
         if computeEntropyOfCounts:
             for key in self.probabilityMatrices:
@@ -796,24 +792,30 @@ class radiomicAnalyser:
 
             return edgeMask
 
+        # get image array
+        #imArr = self.imageData["imageVolume"]
+        #maskArr = self.mask
+        imArr = self.filteredImages["original"]["image"]
+        maskArr = self.filteredImages["original"]["mask"]
+
         # crop images to within 20 pixels of the max extent of the mask in all slices
         pad = 20
-        maskRows = np.sum(np.sum(self.mask, axis=0) > 0, axis=0) > 0
+        maskRows = np.sum(np.sum(maskArr, axis=0) > 0, axis=0) > 0
         maskRows[pad:] = np.logical_or(maskRows[pad:], maskRows[0:-pad])
         maskRows[0:-pad] = np.logical_or(maskRows[0:-pad], maskRows[pad:])
-        maskCols = np.sum(np.sum(self.mask, axis=0) > 0, axis=1) > 0
+        maskCols = np.sum(np.sum(maskArr, axis=0) > 0, axis=1) > 0
         maskCols[pad:] = np.logical_or(maskCols[pad:], maskCols[0:-pad])
         maskCols[0:-pad] = np.logical_or(maskCols[0:-pad], maskCols[pad:])
 
         # put slices next to each other in a single row
-        maskMontage = self.mask[0, :, :][maskCols, :][:, maskRows]
-        imageMontage = self.imageData["imageVolume"][0, :, :][maskCols, :][:, maskRows]
+        maskMontage = maskArr[0, :, :][maskCols, :][:, maskRows]
+        imageMontage = imArr[0, :, :][maskCols, :][:, maskRows]
         barWidth = 5
         maskBar = np.zeros((np.sum(maskCols), barWidth))
         imageBar = 500*np.ones((np.sum(maskCols), barWidth))
-        for n in range(self.mask.shape[0] - 1):
-            maskMontage = np.concatenate((maskMontage, maskBar, self.mask[n + 1, :, :][maskCols, :][:, maskRows]), axis=1)
-            imageMontage = np.concatenate((imageMontage, imageBar, self.imageData["imageVolume"][n + 1, :, :][maskCols, :][:, maskRows]), axis=1)
+        for n in range(maskArr.shape[0] - 1):
+            maskMontage = np.concatenate((maskMontage, maskBar, maskArr[n + 1, :, :][maskCols, :][:, maskRows]), axis=1)
+            imageMontage = np.concatenate((imageMontage, imageBar, imArr[n + 1, :, :][maskCols, :][:, maskRows]), axis=1)
 
         # get grayscale limits
         if vmin is None:
@@ -821,21 +823,21 @@ class radiomicAnalyser:
         if vmax is None:
             vmax = self.imageData["windowCenter"] + self.imageData["windowWidth"]/2
 
-        nPlt = 2 + self.mask.shape[0] # extra for a histogram
+        nPlt = 2 + maskArr.shape[0] # extra for a histogram
         pltRows = int(np.round(np.sqrt(2*nPlt/3)))
         pltCols = int(np.ceil(nPlt/pltRows))
         plt.clf()
         fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         linewidth = 0.2
-        if np.sum(self.mask)==0:
+        if np.sum(maskArr)==0:
             minX = 0
-            maxX = self.mask.shape[2]
+            maxX = maskArr.shape[2]
             minY = 0
-            maxY = self.mask.shape[1]
+            maxY = maskArr.shape[1]
         else:
-            dim1 = np.where(np.sum(self.mask, axis=(0, 2)) > 0)
-            dim2 = np.where(np.sum(self.mask, axis=(0, 1)) > 0)
+            dim1 = np.where(np.sum(maskArr, axis=(0, 2)) > 0)
+            dim2 = np.where(np.sum(maskArr, axis=(0, 1)) > 0)
             minX = min(dim2)
             maxX = max(dim2)
             minY = min(dim1)
@@ -867,7 +869,7 @@ class radiomicAnalyser:
 
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
-                ax.imshow(self.imageData["imageVolume"][n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
+                ax.imshow(imArr[n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
                 if showContours:
                     contours = self.contours[n]
                     for contour in contours:
@@ -875,7 +877,7 @@ class radiomicAnalyser:
                     contoursDelete = self.contoursDelete[n]
                     for contourDelete in contoursDelete:
                         ax.plot([x for x in contourDelete["x"]], [y for y in contourDelete["y"]], 'r', linewidth=linewidth)
-                maskHere = self.mask[n,:,:]
+                maskHere = maskArr[n,:,:]
                 if showMaskBoundary:
                     idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
                     ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
@@ -905,8 +907,8 @@ class radiomicAnalyser:
                 ax.set_xlim(minX, maxX)
                 ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==(pltRows*pltCols-1):
-                if np.sum(self.mask)>0:
-                    yRef = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+                if np.sum(maskArr)>0:
+                    yRef = np.asarray(imArr[maskArr == 1]).reshape(-1, 1)
                     if bins is None:
                         binParams = self.__getBinParameters()
                         if 'binWidth' in binParams:
