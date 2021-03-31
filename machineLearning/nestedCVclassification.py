@@ -20,6 +20,7 @@ import sys
 from plot_roc_cv import plot_roc_cv
 import copy
 from sklearn.pipeline import Pipeline
+import random
 
 def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False):
 
@@ -41,9 +42,15 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     {print('    ' + x["name"]) for x in estimators}
     print(' ')
 
+    # seed these manually if you want the same outcome for repeated calls to this function
+    innerSeed = 12345 #random.randint(1,100000)
+    outerSeed = 12345 #random.randint(1, 100000)
+
     # Compact way of doing nested cross-validation.
-    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=1234)
-    outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=1234)
+    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=innerSeed)
+
+    # need to use same seed so that all uses of this splitter will result in the same split
+    outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=outerSeed)
 
     # use all the processors unless we are in debug mode
     n_jobs = -1
@@ -75,8 +82,23 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=verbose, n_jobs=n_jobs)
         estimators[n]["result"] = cv_result
 
+        print(' ')
+        print(' ')
+        print('Nested CV tuning parameters')
+        cv_result["best_params"] = {}
+        for key in cv_result["estimator"][0].best_params_.keys():
+            cv_result["best_params"][key] = []
         for res in cv_result["estimator"]:
-            print(res.best_params_)
+            for key, value in res.best_params_.items():
+                cv_result["best_params"][key].append(value)
+        for key, value in cv_result["best_params"].items():
+            print(' ')
+            print(key+ ':')
+            print('   Median = ' + str(np.median(value)))
+            print('   Min = ' + str(np.min(value)))
+            print('   Max = ' + str(np.max(value)))
+        print(' ')
+
 
         # fig0, ax0 = plt.subplots(3, 1)
         # for ax, res in zip(ax0.reshape(-1), cv_result["estimator"]):
@@ -111,6 +133,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         cv_result.pop('fit_time', None)
         cv_result.pop('score_time', None)
         cv_result.pop('estimator', None)
+        cv_result.pop('best_params', None)
         cv_result = {key.replace('test_',''): value for key, value in cv_result.items()}
 
         # output main result
