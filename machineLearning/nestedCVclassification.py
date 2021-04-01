@@ -89,6 +89,25 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         print(estimator["name"])
         print('_______________')
         print(' ')
+
+        cv_result_no_tuning = cross_validate(estimator["model"], X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=verbose, n_jobs=n_jobs)
+
+        # tidy up nested_scores and key names
+        cv_result_no_tuning.pop('fit_time', None)
+        cv_result_no_tuning.pop('score_time', None)
+        cv_result_no_tuning.pop('estimator', None)
+        cv_result_no_tuning.pop('best_params', None)
+        cv_result_no_tuning = {key.replace('test_',''): value for key, value in cv_result_no_tuning.items()}
+        no_tuning_scores_mean = {key: np.mean(value) for key, value in cv_result_no_tuning.items()}
+        no_tuning_scores_std = {key: np.std(value) for key, value in cv_result_no_tuning.items()}
+
+        # output result without tuning
+        print('_______________')
+        print(' ')
+        print('No tuning cross-validation performance estimate')
+        print(no_tuning_scores_mean)
+        print(no_tuning_scores_std)
+
         print('Nested CV tuning parameter statistics over folds')
         cv_result["best_params"] = {}
         for key in cv_result["estimator"][0].best_params_.keys():
