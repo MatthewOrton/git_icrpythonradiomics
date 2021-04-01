@@ -2,8 +2,8 @@ import numpy as np
 from sklearn.datasets import load_iris, make_moons
 from matplotlib import pyplot as plt
 from sklearn.svm import SVC
-from sklearn.model_selection import GridSearchCV, cross_val_score, cross_validate, KFold, RepeatedKFold, StratifiedKFold, RepeatedStratifiedKFold, cross_val_predict
-from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve, plot_roc_curve, roc_auc_score
+from sklearn.model_selection import GridSearchCV, cross_val_score, cross_validate, StratifiedKFold, RepeatedStratifiedKFold, cross_val_predict
+from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve, plot_roc_curve
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.gaussian_process import GaussianProcessClassifier
@@ -22,7 +22,7 @@ import copy
 from sklearn.pipeline import Pipeline
 import random
 
-def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, useStratified=False, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False):
+def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False):
 
     # default scoring functions
     if not scoring:
@@ -46,14 +46,11 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     innerSeed = 12345 #random.randint(1,100000)
     outerSeed = 12345 #random.randint(1, 100000)
 
-    if useStratified:
-        inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=innerSeed)
-        # need to use same seed so that all uses of this splitter will result in the same split
-        outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=outerSeed)
-    else:
-        inner_cv = KFold(n_splits=n_splits_inner, shuffle=True, random_state=innerSeed)
-        # need to use same seed so that all uses of this splitter will result in the same split
-        outer_cv = RepeatedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=outerSeed)
+    # Compact way of doing nested cross-validation.
+    inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=innerSeed)
+
+    # need to use same seed so that all uses of this splitter will result in the same split
+    outer_cv = RepeatedStratifiedKFold(n_splits=n_splits_outer, n_repeats=n_repeats, random_state=outerSeed)
 
     # use all the processors unless we are in debug mode
     n_jobs = -1
@@ -85,11 +82,9 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         cv_result = cross_validate(clf, X=X, y=y, cv=outer_cv, scoring=scoring, return_estimator=True, verbose=verbose, n_jobs=n_jobs)
         estimators[n]["result"] = cv_result
 
-        print('_______________')
-        print(estimator["name"])
-        print('_______________')
         print(' ')
-        print('Nested CV tuning parameter statistics over folds')
+        print(' ')
+        print('Nested CV tuning parameters')
         cv_result["best_params"] = {}
         for key in cv_result["estimator"][0].best_params_.keys():
             cv_result["best_params"][key] = []
@@ -131,7 +126,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         plot_roc_cv(X, y, outer_cv, cv_result, ax1, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"]+' nested CV', staircase=staircase, linewidth=linewidth, color=color)
         ax1.text(0, 1, 'AUC = ' + str(np.mean(cv_result['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result['test_roc_auc']).round(3)))
         plot_roc_cv(X, y, outer_cv, cv_result_best_params, ax2, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"] + ' CV with best tuning param', staircase=staircase, linewidth=linewidth, color=color)
-        ax2.text(0, 1, 'AUC = ' + str(np.mean(cv_result_best_params['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result_best_params['test_roc_auc']).round(3)))
+        ax2.text(0, 1, 'AUC = ' + str(np.mean(cv_result_best_params['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result['test_roc_auc']).round(3)))
         plt.show()
 
         # tidy up nested_scores and key names
@@ -145,19 +140,15 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         nested_scores_mean = {key: np.mean(value) for key, value in cv_result.items()}
         nested_scores_std = {key: np.std(value) for key, value in cv_result.items()}
         print(' ')
-        print('Nested cross-validation performance estimate')
+        print(estimator["name"])
         print(nested_scores_mean)
         print(nested_scores_std)
-
-        print('_______________')
         print(' ')
-        print('Resubstitution AUC using parameters tuned on whole data set:')
-        print(str(roc_auc_score(y, clf_best_params.predict_proba(X)[:, 1])))
+        print('Resubstitution performance using parameters tuned on whole data set:')
+        print(clf_best_params.scoring + ' = ' + str(clf_best_params.score(X, y)))
         print(' ')
         print ('Best parameters tuned using whole data set:')
         print(clf_best_params.best_params_)
-        print(' ')
-        print('_______________')
 
         # tidy up nested_scores and key names
         cv_result_best_params.pop('fit_time', None)
@@ -165,7 +156,6 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         cv_result_best_params.pop('estimator', None)
         cv_result_best_params = {key.replace('test_',''): value for key, value in cv_result_best_params.items()}
 
-        print('_______________')
         print(' ')
         print('Cross-validated performance using the best tuning parameters based on GridSearchCV of whole data set:')
         best_params_scores_mean = {key: np.mean(value) for key, value in cv_result_best_params.items()}

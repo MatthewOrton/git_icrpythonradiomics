@@ -65,22 +65,8 @@ def plot_roc_cv(X, y, cv, estimator, ax, smoothing=100, plot_individuals=True, t
                 #ax.plot(fpd, tpd, color='black', linewidth=2, alpha=0.3)
                 ax.plot(fpd, tpd, color='silver')
 
-    tpr_g = np.mean(tpr_i, axis=0)
-
-    fpr_g = fpr_g[tpr_g > 0]
-    tpr_g = tpr_g[tpr_g > 0]
-    fpr_g = fpr_g[tpr_g < 1]
-    tpr_g = tpr_g[tpr_g < 1]
-
-    idx = np.where(tpr_g>tpr_g[0])[0][1] - 2
-    tpr_g = tpr_g[idx:]
-    fpr_g = fpr_g[idx:]
-
-    idx = np.where(tpr_g<tpr_g[-1])[0][-1] + 2
-    tpr_g = tpr_g[0:idx]
-    fpr_g = fpr_g[0:idx]
-
     fpr_g = np.append(np.insert(fpr_g, 0, 0), 1)
+    tpr_g = np.mean(tpr_i, axis=0)
     tpr_g = np.append(np.insert(tpr_g, 0, 0), 1)
     ax.plot(fpr_g, tpr_g, label=titleStr, linewidth=linewidth, color=color)
     ax.set_title(titleStr)
