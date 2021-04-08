@@ -22,7 +22,7 @@ import copy
 from sklearn.pipeline import Pipeline
 import random
 
-def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, useStratified=False, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False):
+def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, useStratified=False, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False, titleStrExtra=''):
 
     # default scoring functions
     if not scoring:
@@ -118,9 +118,12 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         for key, value in cv_result["best_params"].items():
             print(' ')
             print(key+ ':')
-            print('   Median = ' + str(np.median(value)))
-            print('   Min = ' + str(np.min(value)))
-            print('   Max = ' + str(np.max(value)))
+            if isinstance(value[0],str):
+                print('--string--')
+            else:
+                print('   Median = ' + str(np.median(value)))
+                print('   Min = ' + str(np.min(value)))
+                print('   Max = ' + str(np.max(value)))
         print(' ')
 
 
@@ -147,9 +150,9 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
 
         # draw roc from outer cv
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
-        plot_roc_cv(X, y, outer_cv, cv_result, ax1, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"]+' nested CV', staircase=staircase, linewidth=linewidth, color=color)
+        plot_roc_cv(X, y, outer_cv, cv_result, ax1, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"]+ ' ' + titleStrExtra + ' nested CV', staircase=staircase, linewidth=linewidth, color=color)
         ax1.text(0, 1, 'AUC = ' + str(np.mean(cv_result['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result['test_roc_auc']).round(3)))
-        plot_roc_cv(X, y, outer_cv, cv_result_best_params, ax2, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"] + ' CV with best tuning param', staircase=staircase, linewidth=linewidth, color=color)
+        plot_roc_cv(X, y, outer_cv, cv_result_best_params, ax2, plot_individuals=plot_individuals, smoothing=500, titleStr=estimator["name"] + ' ' + titleStrExtra + ' CV with best tuning param', staircase=staircase, linewidth=linewidth, color=color)
         ax2.text(0, 1, 'AUC = ' + str(np.mean(cv_result_best_params['test_roc_auc']).round(3)) + ' \u00B1 ' + str(np.std(cv_result_best_params['test_roc_auc']).round(3)))
         plt.show()
 
@@ -171,7 +174,12 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
         print('_______________')
         print(' ')
         print('Resubstitution AUC using parameters tuned on whole data set:')
-        print(str(roc_auc_score(y, clf_best_params.predict_proba(X)[:, 1])))
+        if hasattr(clf_best_params, "decision_function"):
+            y_pred_best_params = clf_best_params.decision_function(X)
+        else:
+            y_pred_best_params = clf_best_params.predict_proba(X)[:, 1]
+        print(str(roc_auc_score(y, y_pred_best_params)))
+
         print(' ')
         print ('Best parameters tuned using whole data set:')
         print(clf_best_params.best_params_)
