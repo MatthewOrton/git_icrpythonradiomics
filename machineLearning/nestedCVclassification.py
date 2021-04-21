@@ -22,7 +22,7 @@ import copy
 from sklearn.pipeline import Pipeline
 import random
 
-def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, useStratified=False, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False, titleStrExtra=''):
+def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_splits_outer=5, n_repeats=2, useStratified=False, verbose=0, staircase=True, linewidth=2, color=None, plot_individuals=False, titleStrExtra='', innerSeed=None, outerSeed=None):
 
     # default scoring functions
     if not scoring:
@@ -41,10 +41,6 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
     print('Fitting classification models:')
     {print('    ' + x["name"]) for x in estimators}
     print(' ')
-
-    # seed these manually if you want the same outcome for repeated calls to this function
-    innerSeed = 12345 #random.randint(1,100000)
-    outerSeed = 12345 #random.randint(1, 100000)
 
     if useStratified:
         inner_cv = StratifiedKFold(n_splits=n_splits_inner, shuffle=True, random_state=innerSeed)
@@ -121,9 +117,7 @@ def nestedCVclassification(X, y, estimators, *scoring, n_splits_inner=5, n_split
             if isinstance(value[0],str):
                 print('--string--')
             else:
-                print('   Median = ' + str(np.median(value)))
-                print('   Min = ' + str(np.min(value)))
-                print('   Max = ' + str(np.max(value)))
+                print([[x, value.count(x)] for x in cv_result["estimator"][0].param_grid[key]])
         print(' ')
 
 
