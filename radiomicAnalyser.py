@@ -25,7 +25,6 @@ import sys
 sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
 
 from radiomics import featureextractor, setVerbosity
-#from radiomicsFeatureExtractorEnhanced import radiomicsFeatureExtractorEnhanced, setVerbosity
 
 class radiomicAnalyser:
 
@@ -89,12 +88,13 @@ class radiomicAnalyser:
         imageSitk.SetDirection(maskSitk.GetDirection())
 
         extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
-        #extractor = radiomicsFeatureExtractorEnhanced(self.paramFileName)
         setVerbosity(40)
 
         if binWidthOverRide is not None:
             extractor.settings["binWidth"] = binWidthOverRide
 
+        # have added functionality to RadiomicsFeatureExtractor that exposes the probability matrices and filteredImages
+        # so we can evaluate whether they make sense or not.  In particular, the binWidths
         segmentNumber = int(1)
         featureVector, self.probabilityMatrices, self.filteredImages = extractor.execute(imageSitk, maskSitk, segmentNumber)
 
@@ -1027,22 +1027,23 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveProbabilityMatrices(self, imageType='original'):
+    def saveProbabilityMatrices(self, imageType='original', mainTitle=True):
 
         fig = plt.figure()
         columns = 7
         rows = 5
+        fontsize=7
         # show GLCM
         for n in range(self.probabilityMatrices[imageType + "_glcm"].shape[3]):
             fig.add_subplot(rows, columns, n+1)
-            if n==0:
+            if n==0 and mainTitle:
                 titleStr = os.path.split(self.assessorFileName)[1]
                 titleStr = titleStr.replace('__II__', '  ').split('.')[0]
                 titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
                 plt.title(titleStr + '  ' + self.roiObjectLabelFound, fontsize=8, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
-                plt.ylabel('GLCM')
+                plt.ylabel('GLCM', fontsize=fontsize)
             plt.imshow(self.probabilityMatrices[imageType + "_glcm"][0,:,:,n])
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
@@ -1050,37 +1051,37 @@ class radiomicAnalyser:
         for n in range(self.probabilityMatrices[imageType + "_glrlm"].shape[3]):
             fig.add_subplot(rows, columns, n+15)
             if np.mod(n,7)==0:
-                plt.ylabel('GLRLM')
+                plt.ylabel('GLRLM', fontsize=fontsize)
             plt.imshow(self.probabilityMatrices[imageType + "_glrlm"][0, :, :, n], aspect='auto')
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         fig.add_subplot(rows, 5, 21)
         plt.imshow(self.probabilityMatrices[imageType + "_glszm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
-        plt.ylabel('GLSZM')
+        plt.ylabel('GLSZM', fontsize=fontsize)
 
         fig.add_subplot(rows, 5, 22)
         plt.imshow(self.probabilityMatrices[imageType + "_gldm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
-        plt.ylabel('GLDM')
+        plt.ylabel('GLDM', fontsize=fontsize)
 
         fig.add_subplot(rows, 5, 23)
         plt.imshow(self.probabilityMatrices[imageType + "_ngtdm"][0, :, :], aspect='auto')
         plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
-        plt.ylabel('NGTDM')
+        plt.ylabel('NGTDM', fontsize=fontsize)
 
         # rough approximation of 1D histogram
         pr = np.squeeze(np.sum(self.probabilityMatrices[imageType + "_glcm"][0,:,:,0],axis=1))
         prFWHM = np.nonzero(pr>(0.05*np.max(pr)))[0]
 
         fig.add_subplot(rows, 5, 24)
-        plt.plot(pr/np.max(pr))
-        plt.plot(pr>(0.05*np.max(pr)))
-        plt.title(np.max(prFWHM) - np.min(prFWHM))
+        plt.bar(np.arange(len(pr)), pr/np.max(pr), width=1)
+        # plt.plot(pr>(0.05*np.max(pr)))
+        # plt.title(np.max(prFWHM) - np.min(prFWHM))
 
-        fig.add_subplot(rows, 5, 25)
-        plt.plot(pr/np.max(pr))
-        plt.yscale('log')
+        # fig.add_subplot(rows, 5, 25)
+        # plt.plot(pr/np.max(pr))
+        # plt.yscale('log')
 
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
