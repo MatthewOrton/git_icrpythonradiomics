@@ -1027,7 +1027,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveProbabilityMatrices(self, imageType='original', mainTitle=True):
+    def saveProbabilityMatrices(self, imageType='original', mainTitle=True, showHistogram=True):
 
         fig = plt.figure()
         columns = 7
@@ -1074,14 +1074,15 @@ class radiomicAnalyser:
         pr = np.squeeze(np.sum(self.probabilityMatrices[imageType + "_glcm"][0,:,:,0],axis=1))
         prFWHM = np.nonzero(pr>(0.05*np.max(pr)))[0]
 
-        fig.add_subplot(rows, 5, 24)
-        plt.bar(np.arange(len(pr)), pr/np.max(pr), width=1)
-        # plt.plot(pr>(0.05*np.max(pr)))
-        # plt.title(np.max(prFWHM) - np.min(prFWHM))
+        if showHistogram:
+            fig.add_subplot(rows, 5, 24)
+            plt.bar(np.arange(len(pr)), pr/np.max(pr), width=1)
+            # plt.plot(pr>(0.05*np.max(pr)))
+            # plt.title(np.max(prFWHM) - np.min(prFWHM))
 
-        # fig.add_subplot(rows, 5, 25)
-        # plt.plot(pr/np.max(pr))
-        # plt.yscale('log')
+            # fig.add_subplot(rows, 5, 25)
+            # plt.plot(pr/np.max(pr))
+            # plt.yscale('log')
 
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
