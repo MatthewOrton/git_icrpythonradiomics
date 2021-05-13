@@ -793,10 +793,10 @@ class radiomicAnalyser:
             return edgeMask
 
         # get image array
-        #imArr = self.imageData["imageVolume"]
-        #maskArr = self.mask
-        imArr = self.filteredImages["original"]["image"]
-        maskArr = self.filteredImages["original"]["mask"]
+        imArr = self.imageData["imageVolume"]
+        maskArr = self.mask
+        #imArr = self.filteredImages["original"]["image"]
+        #maskArr = self.filteredImages["original"]["mask"]
 
         # crop images to within 20 pixels of the max extent of the mask in all slices
         pad = 20
