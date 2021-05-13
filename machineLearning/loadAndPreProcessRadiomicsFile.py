@@ -130,4 +130,6 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     if len(dfu)>0:
         dfu = dfu[df.columns]
 
+    print('\033[1mNo. of features at output          = \033[4m' + str(df.shape[1]) + '\033[0m\033[0m')
+
     return df, dfu, icc
