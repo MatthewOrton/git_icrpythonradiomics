@@ -6,6 +6,9 @@ from scipy.stats import spearmanr, skew
 
 def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='original', correlation_threshold=0.9, iccThreshold = None, followupStr='_followup', reproducibilityStr='_repro', logTransform=False):
 
+    print('File                               = ' + fileName)
+    print('Feature filter string              = ' + featureSelectStr)
+
     # read data from file
     df = pd.read_csv(fileName, index_col=index_col)
 
@@ -15,6 +18,7 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     # Select chosen features (can be a regex, e.g. 'original|wavelet'
     include = featureSelectStr
     df = df.loc[:, df.columns.str.contains(include)]
+    print('Initial number of features         = ' + str(df.shape[1]))
 
     # Most of the shape features are (non-linear) functions of MeshVolume and SurfaceArea.
     # These extra features are useful for univariate feature discovery, but not for multivariate modelling as they are degenerate, and in a known way.
@@ -33,6 +37,7 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     # Use log transform on any features that only contain positive (or all negative) values, and where the skewness is lower on taking logs.
     # Add '_log' subscript to column names so we can see which are transformed this way
     if logTransform:
+        logTransformedCount = 0
         columnNames = df.columns
         for column in columnNames:
             # if any(column == : # skew and kurtosis exclude
@@ -48,7 +53,9 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
                 if np.abs(skew(logThisColumn)) < np.abs(skew(thisColumn)):
                     df[column][thisColumnFinite] = logThisColumn
                     columnNames = [x + '_log' if x == column else x for x in columnNames]
+                    logTransformedCount += 1
         df.columns = columnNames
+        print('Number of log-transformed features = ' + str(logTransformedCount))
 
     # split off rows for any followup scans
     ifu = df.index.str.endswith(followupStr)
@@ -72,6 +79,12 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
         # get rows of df corresponding to dfr
         dfrr = df.loc[df.index.isin(dfr.index),:]
         dfrr.sort_index(inplace=True)
+
+    print('No. of subjects                    = ' + str(df.shape[0]))
+    if any(ir):
+        print('No. of reproducibility subjects    = ' + str(dfr.shape[0]))
+    if any(ifu):
+        print('No. of follow-up subjects          = ' + str(dfu.shape[0]))
 
     # MeshVolume and Sphericity are the two principle shape features that are not removed in a previous step.
     # If any other features are correlated with these two features then remove the other features in order
@@ -97,6 +110,9 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     fsc.fit(np.array(df))
     df = df.loc[:, fsc._get_support_mask()]
 
+    print('Correlation threshold              = ' + str(correlation_threshold))
+    print('No. of feat. after corr selection  = ' + str(df.shape[1]))
+
     # compute reproducibility statistics and remove non-reproducible features
     icc = {}
     if 'dfr' in  locals():
@@ -107,6 +123,8 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
             if iccThreshold is not None:
                 Iuse[n] = icc[col] > iccThreshold
         df = df.loc[:, Iuse]
+        print('ICC threshold                      = ' + str(iccThreshold))
+        print('No. of feat. after icc selection   = ' + str(df.shape[1]))
 
     # make columns of dfu match df
     if len(dfu)>0:
