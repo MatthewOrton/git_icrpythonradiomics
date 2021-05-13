@@ -3,6 +3,7 @@ import pandas as pd
 from pyirr import intraclass_correlation
 from featureSelect_correlation import featureSelect_correlation
 from scipy.stats import spearmanr, skew
+from re import search
 
 def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='original', correlation_threshold=0.9, iccThreshold = None, followupStr='_followup', reproducibilityStr='_repro', logTransform=False):
 
@@ -34,14 +35,14 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     exclude = 'MinorAxisLength|LeastAxisLength'
     df = df.loc[:, ~df.columns.str.contains(exclude)]
 
-    # Use log transform on any features that only contain positive (or all negative) values, and where the skewness is lower on taking logs.
-    # Add '_log' subscript to column names so we can see which are transformed this way
+    # Use log transform on any features that contain all positive (or all negative) values, and where the skewness is lower on taking logs.
+    # Add '_log' subscript to column names so we can see which have been transformed.
     if logTransform:
         logTransformedCount = 0
         columnNames = df.columns
         for column in columnNames:
-            # if any(column == : # skew and kurtosis exclude
-            #     continue
+            if search('Skew|Kurtosis', column):
+                continue
             # Some columns may have NaNs etc, so leave these as they are, and just look at the finite values since
             # we don't know here if we are going to use row/column deletion or data imputation to handle NaNs.
             thisColumnFinite = np.isfinite(df[column])
@@ -130,6 +131,11 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     if len(dfu)>0:
         dfu = dfu[df.columns]
 
-    print('\033[1mNo. of features at output          = \033[4m' + str(df.shape[1]) + '\033[0m\033[0m')
+    print('\033[4mNo. of features for modelling      = ' + str(df.shape[1]) + '\033[0m')
+
+    if (not np.all(np.isfinite(df))) or (not np.all(np.isfinite(dfu))):
+        print(' ')
+        print('\033[1;31mNon-valid input data, please investigate!\033[0;0m')
+        print(' ')
 
     return df, dfu, icc
