@@ -239,6 +239,7 @@ class radiomicAnalyser:
         self.maskOriginal = copy.deepcopy(self.mask)
         # run this to make sure self.roiObjectLabelFound is updated
         self.__getReferencedUIDs()
+        print('ROI label = ' + str(self.roiObjectLabelFound))
 
     ##########################
     def removeOutliersFromMask(self, outlierWidth=3):
@@ -700,7 +701,6 @@ class radiomicAnalyser:
         if len(roiObjectLabelFound)>1:
             raise Exception("More than one roiObject selected from DICOM RT file - only one currently supported. Use more specific roiObjectLabelFilter string.")
         self.roiObjectLabelFound = roiObjectLabelFound[0]
-        print('         ' + str(self.roiObjectLabelFound))
         return references
 
 
