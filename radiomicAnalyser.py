@@ -275,11 +275,10 @@ class radiomicAnalyser:
             low  = np.min(value)
             high = np.max(value)
 
-        #highVoxels = np.logical_and(self.imageData["imageVolume"] > high, self.mask == 1.0)
-        highVoxels = self.imageData["imageVolume"] > high
+        highVoxels = np.logical_and(self.imageData["imageVolume"] > high, self.mask == 1.0)
         self.imageData["imageVolume"][highVoxels] = high
-        #lowVoxels = np.logical_and(self.imageData["imageVolume"] < low, self.mask == 1.0)
-        lowVoxels = self.imageData["imageVolume"] < low
+
+        lowVoxels = np.logical_and(self.imageData["imageVolume"] < low, self.mask == 1.0)
         self.imageData["imageVolume"][lowVoxels] = low
 
 
