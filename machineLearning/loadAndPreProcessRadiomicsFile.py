@@ -106,8 +106,7 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
         iMajorAxisLength = np.where(df.columns.str.contains('original_shape_MajorAxisLength'))[0]
         iMaximum3DDiameter = np.where(df.columns.str.contains('original_shape_Maximum3DDiameter'))[0]
         if np.abs(corrMat[iMajorAxisLength, iMaximum3DDiameter])>correlation_threshold:
-            ind[iMajorAxisLength] = False
-        df = df.loc[:, ind[:, 0]]
+            df.drop(df.columns[iMajorAxisLength], axis=1, inplace=True)
 
     # Apply generic pair-wise correlation feature reduction.
     # Since we previously removed features correlated with MeshVolume and Sphericity, these two features
