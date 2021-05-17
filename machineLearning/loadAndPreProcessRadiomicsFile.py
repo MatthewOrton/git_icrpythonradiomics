@@ -90,19 +90,24 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     # MeshVolume and Sphericity are the two principle shape features that are not removed in a previous step.
     # If any other features are correlated with these two features then remove the other features in order
     # to ensure MeshVolume and Sphericity remain as these are the easiest features to interpret.
-    corrMat = np.abs(spearmanr(np.array(df)).correlation)
-    iMajorAxisLength = np.where(df.columns.str.contains('original_shape_MajorAxisLength'))[0]
-    iMaximum3DDiameter = np.where(df.columns.str.contains('original_shape_Maximum3DDiameter'))[0]
-    iMeshVolume = np.where(df.columns.str.contains('original_shape_MeshVolume'))[0]
-    iSphericity = np.where(df.columns.str.contains('original_shape_Sphericity'))[0]
-    ind = np.logical_and(corrMat[:, iMeshVolume] < correlation_threshold, corrMat[:, iSphericity] < correlation_threshold)
-    ind[iMeshVolume] = True
-    ind[iSphericity] = True
+    if any(df.columns.str.contains('original_shape_MeshVolume')) and any(df.columns.str.contains('original_shape_Sphericity')):
+        corrMat = np.abs(spearmanr(np.array(df)).correlation)
+        iMeshVolume = np.where(df.columns.str.contains('original_shape_MeshVolume'))[0]
+        iSphericity = np.where(df.columns.str.contains('original_shape_Sphericity'))[0]
+        ind = np.logical_and(corrMat[:, iMeshVolume] < correlation_threshold, corrMat[:, iSphericity] < correlation_threshold)
+        ind[iMeshVolume] = True
+        ind[iSphericity] = True
+        df = df.loc[:, ind[:, 0]]
+
     # Check if MajorAxisLength and Maximum3DDiameter are correlated, and force MajorAxisLength to be removed.
-    # Maximum3DDiameter may also be removed if it is correlated with MeshVolume, but this is not handled explicitly
-    if np.abs(corrMat[iMajorAxisLength, iMaximum3DDiameter])>correlation_threshold:
-        ind[iMajorAxisLength] = False
-    df = df.loc[:, ind[:, 0]]
+    # Both or either feature may already have been removed if it is correlated with MeshVolume
+    if any(df.columns.str.contains('original_shape_MajorAxisLength')) and any(df.columns.str.contains('original_shape_Maximum3DDiameter')):
+        corrMat = np.abs(spearmanr(np.array(df)).correlation)
+        iMajorAxisLength = np.where(df.columns.str.contains('original_shape_MajorAxisLength'))[0]
+        iMaximum3DDiameter = np.where(df.columns.str.contains('original_shape_Maximum3DDiameter'))[0]
+        if np.abs(corrMat[iMajorAxisLength, iMaximum3DDiameter])>correlation_threshold:
+            ind[iMajorAxisLength] = False
+        df = df.loc[:, ind[:, 0]]
 
     # Apply generic pair-wise correlation feature reduction.
     # Since we previously removed features correlated with MeshVolume and Sphericity, these two features
