@@ -2,12 +2,11 @@ import numpy as np
 from sklearn.model_selection import GridSearchCV, cross_validate, StratifiedKFold, RepeatedStratifiedKFold, permutation_test_score
 from sklearn.metrics import roc_auc_score, confusion_matrix
 
-#estimator=estimator["model"], param_grid=estimator["p_grid"], cv=inner_cv, refit=True,                         verbose=0, scoring=estimator["scoring"]
 def classificationNestedCVpermutationTest(X, y, estimator, param_grid, scoring, n_repeats=100, n_permutations=None, verbose=0, n_jobs=-1):
 
     print('Model                              = ' + str(estimator))
 
-    # fit to all data using CV for lasso parameter optimisation
+    # fit to all data using CV for tuning parameter optimisation
     inner_cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=5)
     clfAll = GridSearchCV(estimator=estimator,
                           param_grid=param_grid,
