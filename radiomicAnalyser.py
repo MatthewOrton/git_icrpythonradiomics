@@ -251,6 +251,38 @@ class radiomicAnalyser:
             self.mask[np.logical_and(self.mask==1.0, imageVolumeOutliers)] = 0.0
 
     ##########################
+    def clipImage(self, **kwargs): # stdFactor=float, quantiles=[float, float], clip=[float, float]
+
+        if len(kwargs)>1:
+            raise Exception("Only one keyword allowed")
+        keyword = list(kwargs.keys())[0]
+        value = list(kwargs.values())[0]
+
+        pixels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
+        if keyword == 'stdFactor':
+            mu = np.mean(pixels)
+            sg = np.std(pixels)
+            low  = mu - value * sg
+            high = mu + value * sg
+
+        if keyword == 'quantiles':
+            low  = np.quantile(pixels, np.min(value))
+            high = np.quantile(pixels, np.max(value))
+
+        if keyword == 'clip':
+            low  = np.min(value)
+            high = np.max(value)
+
+        #highVoxels = np.logical_and(self.imageData["imageVolume"] > high, self.mask == 1.0)
+        highVoxels = self.imageData["imageVolume"] > high
+        self.imageData["imageVolume"][highVoxels] = high
+        #lowVoxels = np.logical_and(self.imageData["imageVolume"] < low, self.mask == 1.0)
+        lowVoxels = self.imageData["imageVolume"] < low
+        self.imageData["imageVolume"][lowVoxels] = low
+
+
+    ##########################
     # method to enable mask to be altered outside the object, typically to enable experimentation
     def setMask(self, mask):
         if hasattr(self,'imageData'):
@@ -1040,7 +1072,7 @@ class radiomicAnalyser:
                 titleStr = os.path.split(self.assessorFileName)[1]
                 titleStr = titleStr.replace('__II__', '  ').split('.')[0]
                 titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
-                plt.title(titleStr + '  ' + self.roiObjectLabelFound, fontsize=8, fontdict = {'horizontalalignment': 'left'})
+                plt.title(titleStr + '  ' + self.roiObjectLabelFound, fontsize=7, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM', fontsize=fontsize)
