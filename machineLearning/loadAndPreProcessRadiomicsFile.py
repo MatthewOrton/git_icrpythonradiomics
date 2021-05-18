@@ -1,11 +1,13 @@
 import numpy as np
 import pandas as pd
+from pandas.api.types import is_string_dtype
+from pandas.api.types import is_numeric_dtype
 from pyirr import intraclass_correlation
 from featureSelect_correlation import featureSelect_correlation
 from scipy.stats import spearmanr, skew
 from re import search
 
-def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='original', correlation_threshold=0.9, iccThreshold = None, followupStr='_followup', reproducibilityStr='_repro', logTransform=False):
+def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureRemoveStr='source|diagnostics', featureSelectStr='original', correlation_threshold=0.9, iccThreshold = None, followupStr='_followup', reproducibilityStr='_repro', logTransform=False):
 
     print('File                               = ' + fileName)
     print('Feature filter string              = ' + featureSelectStr)
@@ -13,8 +15,8 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     # read data from file
     df = pd.read_csv(fileName, index_col=index_col)
 
-    # remove non-data columns
-    df = df.loc[:, ~df.columns.str.contains('source|diagnostics')]
+    # remove unwanted columns
+    df = df.loc[:, ~df.columns.str.contains(featureRemoveStr)]
 
     # Select chosen features (can be a regex, e.g. 'original|wavelet'
     include = featureSelectStr
@@ -41,7 +43,8 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
         logTransformedCount = 0
         columnNames = df.columns
         for column in columnNames:
-            if search('Skew|Kurtosis', column):
+            # don't do log-transform on certain features or feature types
+            if search('Skew|Kurtosis', column) or is_string_dtype(df[column]) or ('source' in column) or ('diagnostic' in column):
                 continue
             # Some columns may have NaNs etc, so leave these as they are, and just look at the finite values since
             # we don't know here if we are going to use row/column deletion or data imputation to handle NaNs.
@@ -112,8 +115,11 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
     # Since we previously removed features correlated with MeshVolume and Sphericity, these two features
     # are guaranteed to survive this step.
     fsc = featureSelect_correlation(threshold=correlation_threshold, exact=True)
-    fsc.fit(np.array(df))
-    df = df.loc[:, fsc._get_support_mask()]
+    idxCorrFeatures = ~df.columns.str.contains('source|diagnostic')
+    fsc.fit(np.array(df.loc[:, idxCorrFeatures]))
+    idxFeatures = df.columns.str.contains('source|diagnostic')
+    idxFeatures[idxCorrFeatures] = fsc._get_support_mask()
+    df = df.loc[:, idxFeatures]
 
     print('Correlation threshold              = ' + str(correlation_threshold))
     print('No. of feat. after corr selection  = ' + str(df.shape[1]))
@@ -137,9 +143,9 @@ def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureSelectStr='o
 
     print('\033[4mNo. of features for modelling      = ' + str(df.shape[1]) + '\033[0m')
 
-    if (not np.all(np.isfinite(df))) or (not np.all(np.isfinite(dfu))):
-        print(' ')
-        print('\033[1;31mNon-valid input data, please investigate!\033[0;0m')
-        print(' ')
+    # if (not np.all(np.isfinite(df))) or (not np.all(np.isfinite(dfu))):
+    #     print(' ')
+    #     print('\033[1;31mNon-valid input data, please investigate!\033[0;0m')
+    #     print(' ')
 
     return df, dfu, icc
