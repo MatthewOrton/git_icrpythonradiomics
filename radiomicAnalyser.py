@@ -18,6 +18,9 @@ from skimage.segmentation import flood_fill
 import warnings
 import copy
 
+from mixture_cdf import GaussianMixtureCdf
+from mixture_cdf import BayesianGaussianMixtureCdf
+from scipy.stats import norm
 
 
 # add folder to path for radiomicsFeatureExtractorEnhanced
@@ -178,6 +181,64 @@ class radiomicAnalyser:
         print('Radiomic features computed')
 
         return np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
+    def histogramEqualise(self, flavour='Bayesian', nComponents=6, debugPlot=False):
+
+        # if mask is input then get the reference data from y using the mask
+        dataMask = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
+        # Fit Gaussian mixture model to reference data dataMask.
+        if flavour is 'Bayesian':
+            # With Bayesian model the prior acts to regularise the mixture model, i.e. only
+            # a "sensible" number of components will have non-negligible
+            # weights, so the mixture model will be parsimonious.  The
+            # mixture components themselves also tend to cluster together
+            # to further encourage parsimony.
+            gmm = BayesianGaussianMixtureCdf(nComponents, random_state=10, max_iter=10000).fit(dataMask)
+        else:
+            # this is standard EM Gaussian mixture model, and is included for evaluation purposes, but
+            # not recommended for main analysis
+            gmm = GaussianMixtureCdf(nComponents, random_state=10, max_iter=10000).fit(dataMask)
+
+        if debugPlot:
+            x = np.linspace(np.min(dataMask), np.max(dataMask), 1000)
+            bins = np.array(range(int(x[0]), int(x[-1] + 2))) - 0.5
+
+            logprob_standard = gmm.score_samples(x.reshape(-1, 1))
+            plt.plot(x, np.exp(logprob_standard))
+            plt.hist(dataMask, bins, density=True, histtype='stepfilled')
+            plt.show()
+
+        # Do histogram equalisation of fitted mixture model onto a truncated standard normal distribution.  The truncation is included
+        # in order to ensure the bin edges used by the radiomics package are consistent across subjects (when the BinCount is specified).
+        BW = 4  # BW = 4 implies a 4-sigma truncation
+        loc = 0
+        scale = 1
+        out = {}
+        cc = norm.cdf(-BW, loc=loc, scale=scale)
+        dataAll = self.imageData["imageVolume"].reshape(-1, 1)
+
+        # equalise data from mask and clip to +/- BW
+        dataMask = norm.ppf(gmm.cdf(dataMask) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+        dataMask[dataMask < -BW] = -BW
+        dataMask[dataMask > BW] = BW
+        # at this stage there may not be any voxels equal to -BW or BW, but we are using this only to find the min and max values inside the mask
+
+        # equalise all data and clip to +/- BW
+        dataAll = norm.ppf(gmm.cdf(dataAll) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+        dataAll[dataAll < -BW] = -BW
+        dataAll[dataAll > BW] = BW
+        dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
+
+        # Find voxels inside the mask that are equal to the max and set one of them to BW.  Do similar for the min.
+        idxMax = np.where(np.bitwise_and(dataAll == np.max(dataMask), self.mask == 1))
+        idxMin = np.where(np.bitwise_and(dataAll == np.min(dataMask), self.mask == 1))
+        dataAll[idxMax[0][0], idxMax[1][0], idxMax[2][0]] = BW
+        dataAll[idxMin[0][0], idxMin[1][0], idxMin[2][0]] = -BW
+
+        self.imageData["imageVolume"] = dataAll
+
+        return gmm
 
     def saveImageAndMaskToMatlab(self):
         imData = self.imageData["imageVolume"]
