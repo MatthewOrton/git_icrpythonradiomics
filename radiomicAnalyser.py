@@ -18,16 +18,16 @@ from skimage.segmentation import flood_fill
 import warnings
 import copy
 
-from mixture_cdf import GaussianMixtureCdf
-from mixture_cdf import BayesianGaussianMixtureCdf
 from scipy.stats import norm
 
 
-# add folder to path for radiomicsFeatureExtractorEnhanced
+# add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
 sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
 
 from radiomics import featureextractor, setVerbosity
+from mixture_cdf import GaussianMixtureCdf
+from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
@@ -194,11 +194,11 @@ class radiomicAnalyser:
             # weights, so the mixture model will be parsimonious.  The
             # mixture components themselves also tend to cluster together
             # to further encourage parsimony.
-            gmm = BayesianGaussianMixtureCdf(nComponents, random_state=10, max_iter=10000).fit(dataMask)
+            gmm = BayesianGaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMask)
         else:
             # this is standard EM Gaussian mixture model, and is included for evaluation purposes, but
             # not recommended for main analysis
-            gmm = GaussianMixtureCdf(nComponents, random_state=10, max_iter=10000).fit(dataMask)
+            gmm = GaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMask)
 
         if debugPlot:
             x = np.linspace(np.min(dataMask), np.max(dataMask), 1000)
