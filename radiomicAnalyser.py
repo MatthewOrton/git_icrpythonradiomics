@@ -66,7 +66,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -95,6 +95,11 @@ class radiomicAnalyser:
 
         if binWidthOverRide is not None:
             extractor.settings["binWidth"] = binWidthOverRide
+            extractor.settings["binCount"] = None
+
+        if binCountOverRide is not None:
+            extractor.settings["binWidth"] = None
+            extractor.settings["binCount"] = binCountOverRide
 
         # have added functionality to RadiomicsFeatureExtractor that exposes the probability matrices and filteredImages
         # so we can evaluate whether they make sense or not.  In particular, the binWidths
@@ -182,10 +187,17 @@ class radiomicAnalyser:
 
         return np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
 
-    def histogramEqualise(self, flavour='Bayesian', nComponents=6, debugPlot=False):
+    def histogramEqualise(self, flavour='Bayesian', nComponents=6, debugPlot=False, targetDistribution='normal'):
+
+        if targetDistribution is None:
+            return
 
         # if mask is input then get the reference data from y using the mask
         dataMask = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
+        # skip some data so we never fit more than 10000 elements
+        skip = np.ceil(dataMask.shape[0]/10000).astype(int)
+        dataMaskTrain = dataMask[0::skip,:]
 
         # Fit Gaussian mixture model to reference data dataMask.
         if flavour is 'Bayesian':
@@ -194,47 +206,67 @@ class radiomicAnalyser:
             # weights, so the mixture model will be parsimonious.  The
             # mixture components themselves also tend to cluster together
             # to further encourage parsimony.
-            gmm = BayesianGaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMask)
+            gmm = BayesianGaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMaskTrain)
         else:
             # this is standard EM Gaussian mixture model, and is included for evaluation purposes, but
             # not recommended for main analysis
-            gmm = GaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMask)
+            gmm = GaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMaskTrain)
 
         if debugPlot:
             x = np.linspace(np.min(dataMask), np.max(dataMask), 1000)
             bins = np.array(range(int(x[0]), int(x[-1] + 2))) - 0.5
 
             logprob_standard = gmm.score_samples(x.reshape(-1, 1))
-            plt.plot(x, np.exp(logprob_standard))
-            plt.hist(dataMask, bins, density=True, histtype='stepfilled')
-            plt.show()
+            fig, ax = plt.subplots(2)
+            ax[0].plot(x, np.exp(logprob_standard))
+            ax[0].hist(dataMask, bins, density=True, histtype='stepfilled')
+            ax[0].plot(x, np.exp(logprob_standard))
+            ax[0].hist(dataMask, bins, density=True, histtype='stepfilled')
 
-        # Do histogram equalisation of fitted mixture model onto a truncated standard normal distribution.  The truncation is included
-        # in order to ensure the bin edges used by the radiomics package are consistent across subjects (when the BinCount is specified).
-        BW = 4  # BW = 4 implies a 4-sigma truncation
-        loc = 0
-        scale = 1
-        out = {}
-        cc = norm.cdf(-BW, loc=loc, scale=scale)
-        dataAll = self.imageData["imageVolume"].reshape(-1, 1)
+        if targetDistribution == 'normal':
+            # Do histogram equalisation of fitted mixture model onto a truncated standard normal distribution.  The truncation is included
+            # in order to ensure the bin edges used by the radiomics package are consistent across subjects (when the BinCount is specified).
+            BW = 4  # BW = 4 implies a 4-sigma truncation
+            loc = 0
+            scale = 1
+            out = {}
+            cc = norm.cdf(-BW, loc=loc, scale=scale)
+            dataAll = self.imageData["imageVolume"].reshape(-1, 1)
 
-        # equalise data from mask and clip to +/- BW
-        dataMask = norm.ppf(gmm.cdf(dataMask) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
-        dataMask[dataMask < -BW] = -BW
-        dataMask[dataMask > BW] = BW
-        # at this stage there may not be any voxels equal to -BW or BW, but we are using this only to find the min and max values inside the mask
+            # equalise data from mask and clip to +/- BW
+            dataMask = norm.ppf(gmm.cdf(dataMask) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+            dataMask[dataMask < -BW] = -BW
+            dataMask[dataMask > BW] = BW
+            # at this stage there may not be any voxels equal to -BW or BW, but we are using this only to find the min and max values inside the mask
 
-        # equalise all data and clip to +/- BW
-        dataAll = norm.ppf(gmm.cdf(dataAll) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
-        dataAll[dataAll < -BW] = -BW
-        dataAll[dataAll > BW] = BW
-        dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
+            # equalise all data and clip to +/- BW
+            dataAll = norm.ppf(gmm.cdf(dataAll) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+            dataAll[dataAll < -BW] = -BW
+            dataAll[dataAll > BW] = BW
+            dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
 
-        # Find voxels inside the mask that are equal to the max and set one of them to BW.  Do similar for the min.
-        idxMax = np.where(np.bitwise_and(dataAll == np.max(dataMask), self.mask == 1))
-        idxMin = np.where(np.bitwise_and(dataAll == np.min(dataMask), self.mask == 1))
-        dataAll[idxMax[0][0], idxMax[1][0], idxMax[2][0]] = BW
-        dataAll[idxMin[0][0], idxMin[1][0], idxMin[2][0]] = -BW
+            # Find voxels inside the mask that are equal to the max and set one of them to BW.  Do similar for the min.
+            idxMax = np.where(np.bitwise_and(dataAll == np.max(dataMask), self.mask == 1))
+            idxMin = np.where(np.bitwise_and(dataAll == np.min(dataMask), self.mask == 1))
+            dataAll[idxMax[0][0], idxMax[1][0], idxMax[2][0]] = BW
+            dataAll[idxMin[0][0], idxMin[1][0], idxMin[2][0]] = -BW
+
+            if debugPlot:
+                ax[1].hist(dataMask, np.linspace(-BW,BW,16), density=True, histtype='stepfilled')
+                plt.show()
+
+
+        if targetDistribution == 'uniform':
+            dataAll = self.imageData["imageVolume"].reshape(-1, 1)
+            # equalise all data and clip to +/- BW
+            dataAll = gmm.cdf(dataAll)
+            dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
+
+            if debugPlot:
+                dataMask = gmm.cdf(dataMask)
+                ax[1].hist(dataMask, np.linspace(0,1,16), density=True, histtype='stepfilled')
+                plt.show()
+
 
         self.imageData["imageVolume"] = dataAll
 
