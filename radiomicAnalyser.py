@@ -686,10 +686,17 @@ class radiomicAnalyser:
         self.dcmPatientName = str(dcm.PatientName) # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
         self.StudyDate = dcm.StudyDate
         self.StudyTime = dcm.StudyTime
-        self.Manufacturer = dcm.Manufacturer
-        self.ManufacturerModelName = dcm.ManufacturerModelName
+        if 'Manufacturer' in dcm:
+            self.Manufacturer = dcm.Manufacturer
+        else:
+            self.Manufacturer = 'unknown'
+        if 'ManufacturerModelName' in dcm:
+            self.ManufacturerModelName = dcm.ManufacturerModelName
+        else:
+            self.ManufacturerModelName = 'unknown'
 
-        # get any Modality-specific parameters that might be useful for checking for confounders
+
+            # get any Modality-specific parameters that might be useful for checking for confounders
         sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
         sopClassUid_MRImageStorage = '1.2.840.10008.5.1.4.1.1.4'
         if dcm.SOPClassUID == sopClassUid_CTImageStorage:
@@ -836,21 +843,31 @@ class radiomicAnalyser:
             # check only one referenced series
             if len(dcm.ReferencedSeriesSequence) != 1:
                 raise Exception("DICOM SEG file referencing more than one series not supported!")
+
             # get list of all ReferencedSopInstanceUIDs
             annotationObjectList = []
-            for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
-                if len(funGrpSeq.DerivationImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-                if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-                if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-                referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-                label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-                annotationObjectList.append(
-                    {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[
-                        0].ReferencedSOPInstanceUID,
-                     "label": label})
+            if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
+                for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
+                    if len(funGrpSeq.DerivationImageSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
+                    if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
+                    if len(funGrpSeq.SegmentIdentificationSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
+                    referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+                    label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
+                    annotationObjectList.append(
+                        {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID,
+                         "label": label})
+
+            # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
+            # just put unknown for segment label
+            elif 'ReferencedInstanceSequence' in dcm.ReferencedSeriesSequence[0]:
+                for refSerItem in dcm.ReferencedSeriesSequence[0].ReferencedInstanceSequence:
+                    annotationObjectList.append(
+                        {"ReferencedSOPInstanceUID": refSerItem.ReferencedSOPInstanceUID,
+                         "label": 'unknown'})
+
             self.ReferencedSeriesUID = dcm.ReferencedSeriesSequence[0].SeriesInstanceUID
             return annotationObjectList
 
