@@ -18,13 +18,16 @@ from skimage.segmentation import flood_fill
 import warnings
 import copy
 
+from scipy.stats import norm
 
 
-# add folder to path for radiomicsFeatureExtractorEnhanced
+# add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
 sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics')
 
 from radiomics import featureextractor, setVerbosity
+from mixture_cdf import GaussianMixtureCdf
+from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
@@ -63,7 +66,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -92,6 +95,11 @@ class radiomicAnalyser:
 
         if binWidthOverRide is not None:
             extractor.settings["binWidth"] = binWidthOverRide
+            extractor.settings["binCount"] = None
+
+        if binCountOverRide is not None:
+            extractor.settings["binWidth"] = None
+            extractor.settings["binCount"] = binCountOverRide
 
         # have added functionality to RadiomicsFeatureExtractor that exposes the probability matrices and filteredImages
         # so we can evaluate whether they make sense or not.  In particular, the binWidths
@@ -179,6 +187,91 @@ class radiomicAnalyser:
 
         return np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
 
+    def histogramEqualise(self, flavour='Bayesian', nComponents=6, debugPlot=False, targetDistribution='normal'):
+
+        if targetDistribution is None:
+            return
+
+        # if mask is input then get the reference data from y using the mask
+        dataMask = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
+
+        # skip some data so we never fit more than 10000 elements
+        skip = np.ceil(dataMask.shape[0]/10000).astype(int)
+        dataMaskTrain = dataMask[0::skip,:]
+
+        # Fit Gaussian mixture model to reference data dataMask.
+        if flavour is 'Bayesian':
+            # With Bayesian model the prior acts to regularise the mixture model, i.e. only
+            # a "sensible" number of components will have non-negligible
+            # weights, so the mixture model will be parsimonious.  The
+            # mixture components themselves also tend to cluster together
+            # to further encourage parsimony.
+            gmm = BayesianGaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMaskTrain)
+        else:
+            # this is standard EM Gaussian mixture model, and is included for evaluation purposes, but
+            # not recommended for main analysis
+            gmm = GaussianMixtureCdf(n_components=nComponents, random_state=10, max_iter=10000).fit(dataMaskTrain)
+
+        if debugPlot:
+            x = np.linspace(np.min(dataMask), np.max(dataMask), 1000)
+            bins = np.array(range(int(x[0]), int(x[-1] + 2))) - 0.5
+
+            logprob_standard = gmm.score_samples(x.reshape(-1, 1))
+            fig, ax = plt.subplots(2)
+            ax[0].plot(x, np.exp(logprob_standard))
+            ax[0].hist(dataMask, bins, density=True, histtype='stepfilled')
+            ax[0].plot(x, np.exp(logprob_standard))
+            ax[0].hist(dataMask, bins, density=True, histtype='stepfilled')
+
+        if targetDistribution == 'normal':
+            # Do histogram equalisation of fitted mixture model onto a truncated standard normal distribution.  The truncation is included
+            # in order to ensure the bin edges used by the radiomics package are consistent across subjects (when the BinCount is specified).
+            BW = 4  # BW = 4 implies a 4-sigma truncation
+            loc = 0
+            scale = 1
+            out = {}
+            cc = norm.cdf(-BW, loc=loc, scale=scale)
+            dataAll = self.imageData["imageVolume"].reshape(-1, 1)
+
+            # equalise data from mask and clip to +/- BW
+            dataMask = norm.ppf(gmm.cdf(dataMask) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+            dataMask[dataMask < -BW] = -BW
+            dataMask[dataMask > BW] = BW
+            # at this stage there may not be any voxels equal to -BW or BW, but we are using this only to find the min and max values inside the mask
+
+            # equalise all data and clip to +/- BW
+            dataAll = norm.ppf(gmm.cdf(dataAll) * (1 - 2 * cc) + cc, loc=loc, scale=scale)
+            dataAll[dataAll < -BW] = -BW
+            dataAll[dataAll > BW] = BW
+            dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
+
+            # Find voxels inside the mask that are equal to the max and set one of them to BW.  Do similar for the min.
+            idxMax = np.where(np.bitwise_and(dataAll == np.max(dataMask), self.mask == 1))
+            idxMin = np.where(np.bitwise_and(dataAll == np.min(dataMask), self.mask == 1))
+            dataAll[idxMax[0][0], idxMax[1][0], idxMax[2][0]] = BW
+            dataAll[idxMin[0][0], idxMin[1][0], idxMin[2][0]] = -BW
+
+            if debugPlot:
+                ax[1].hist(dataMask, np.linspace(-BW,BW,16), density=True, histtype='stepfilled')
+                plt.show()
+
+
+        if targetDistribution == 'uniform':
+            dataAll = self.imageData["imageVolume"].reshape(-1, 1)
+            # equalise all data and clip to +/- BW
+            dataAll = gmm.cdf(dataAll)
+            dataAll = dataAll.reshape(self.imageData["imageVolume"].shape)
+
+            if debugPlot:
+                dataMask = gmm.cdf(dataMask)
+                ax[1].hist(dataMask, np.linspace(0,1,16), density=True, histtype='stepfilled')
+                plt.show()
+
+
+        self.imageData["imageVolume"] = dataAll
+
+        return gmm
+
     def saveImageAndMaskToMatlab(self):
         imData = self.imageData["imageVolume"]
         mask = self.mask
@@ -240,6 +333,13 @@ class radiomicAnalyser:
         # run this to make sure self.roiObjectLabelFound is updated
         self.__getReferencedUIDs()
         print('ROI label  : ' + str(self.roiObjectLabelFound))
+
+    ##########################
+    def removeEmptySlices(self):
+        sliceUse = np.sum(self.mask, axis=(1,2))>0
+        self.mask = self.mask[sliceUse,:,:]
+        self.imageData["imageVolume"] = self.imageData["imageVolume"][sliceUse, :, :]
+
 
     ##########################
     def removeOutliersFromMask(self, outlierWidth=3):
@@ -332,21 +432,31 @@ class radiomicAnalyser:
 
         self.mask = np.zeros(self.imageData["imageVolume"].shape)
         maskCount = 0
-        for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
-            if len(funGrpSeq.DerivationImageSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-            if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-            if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-            referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-            referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-            if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
-                    continue
-            thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
-            sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
-            self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
-            maskCount += 1
+        if 'DerivationImageSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0]:
+            for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
+                if len(funGrpSeq.DerivationImageSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
+                if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
+                if len(funGrpSeq.SegmentIdentificationSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
+                referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+                referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
+                if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
+                        continue
+                thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
+                sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
+                self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
+                maskCount += 1
+
+        # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
+        # ignore label and put mask slices in as necessary
+        elif 'ReferencedInstanceSequence' in dcmSeg.ReferencedSeriesSequence[0]:
+            for n, refSerItem in enumerate(dcmSeg.ReferencedSeriesSequence[0].ReferencedInstanceSequence):
+                thisSopInstUID = refSerItem.ReferencedSOPInstanceUID
+                sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
+                self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
+                maskCount += 1
 
         if maskCount==0:
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
@@ -593,10 +703,17 @@ class radiomicAnalyser:
         self.dcmPatientName = str(dcm.PatientName) # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
         self.StudyDate = dcm.StudyDate
         self.StudyTime = dcm.StudyTime
-        self.Manufacturer = dcm.Manufacturer
-        self.ManufacturerModelName = dcm.ManufacturerModelName
+        if 'Manufacturer' in dcm:
+            self.Manufacturer = dcm.Manufacturer
+        else:
+            self.Manufacturer = 'unknown'
+        if 'ManufacturerModelName' in dcm:
+            self.ManufacturerModelName = dcm.ManufacturerModelName
+        else:
+            self.ManufacturerModelName = 'unknown'
 
-        # get any Modality-specific parameters that might be useful for checking for confounders
+
+            # get any Modality-specific parameters that might be useful for checking for confounders
         sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
         sopClassUid_MRImageStorage = '1.2.840.10008.5.1.4.1.1.4'
         if dcm.SOPClassUID == sopClassUid_CTImageStorage:
@@ -743,21 +860,31 @@ class radiomicAnalyser:
             # check only one referenced series
             if len(dcm.ReferencedSeriesSequence) != 1:
                 raise Exception("DICOM SEG file referencing more than one series not supported!")
+
             # get list of all ReferencedSopInstanceUIDs
             annotationObjectList = []
-            for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
-                if len(funGrpSeq.DerivationImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-                if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-                if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-                referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-                label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-                annotationObjectList.append(
-                    {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[
-                        0].ReferencedSOPInstanceUID,
-                     "label": label})
+            if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
+                for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
+                    if len(funGrpSeq.DerivationImageSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
+                    if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
+                    if len(funGrpSeq.SegmentIdentificationSequence) != 1:
+                        raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
+                    referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+                    label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
+                    annotationObjectList.append(
+                        {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID,
+                         "label": label})
+
+            # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
+            # just put unknown for segment label
+            elif 'ReferencedInstanceSequence' in dcm.ReferencedSeriesSequence[0]:
+                for refSerItem in dcm.ReferencedSeriesSequence[0].ReferencedInstanceSequence:
+                    annotationObjectList.append(
+                        {"ReferencedSOPInstanceUID": refSerItem.ReferencedSOPInstanceUID,
+                         "label": 'unknown'})
+
             self.ReferencedSeriesUID = dcm.ReferencedSeriesSequence[0].SeriesInstanceUID
             return annotationObjectList
 
