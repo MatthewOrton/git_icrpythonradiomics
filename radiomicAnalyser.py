@@ -335,6 +335,13 @@ class radiomicAnalyser:
         print('ROI label  : ' + str(self.roiObjectLabelFound))
 
     ##########################
+    def removeEmptySlices(self):
+        sliceUse = np.sum(self.mask, axis=(1,2))>0
+        self.mask = self.mask[sliceUse,:,:]
+        self.imageData["imageVolume"] = self.imageData["imageVolume"][sliceUse, :, :]
+
+
+    ##########################
     def removeOutliersFromMask(self, outlierWidth=3):
         if outlierWidth > 0:
             pixels = np.asarray(self.imageData["imageVolume"][self.mask == 1]).reshape(-1, 1)
@@ -425,21 +432,31 @@ class radiomicAnalyser:
 
         self.mask = np.zeros(self.imageData["imageVolume"].shape)
         maskCount = 0
-        for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
-            if len(funGrpSeq.DerivationImageSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-            if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-            if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-            referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-            referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-            if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
-                    continue
-            thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
-            sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
-            self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
-            maskCount += 1
+        if 'DerivationImageSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0]:
+            for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
+                if len(funGrpSeq.DerivationImageSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
+                if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
+                if len(funGrpSeq.SegmentIdentificationSequence) != 1:
+                    raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
+                referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+                referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
+                if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
+                        continue
+                thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
+                sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
+                self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
+                maskCount += 1
+
+        # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
+        # ignore label and put mask slices in as necessary
+        elif 'ReferencedInstanceSequence' in dcmSeg.ReferencedSeriesSequence[0]:
+            for n, refSerItem in enumerate(dcmSeg.ReferencedSeriesSequence[0].ReferencedInstanceSequence):
+                thisSopInstUID = refSerItem.ReferencedSOPInstanceUID
+                sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
+                self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
+                maskCount += 1
 
         if maskCount==0:
             print('\033[1;31;48m    createMask(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
@@ -846,7 +863,7 @@ class radiomicAnalyser:
 
             # get list of all ReferencedSopInstanceUIDs
             annotationObjectList = []
-            if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
+            if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
                 for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
                     if len(funGrpSeq.DerivationImageSequence) != 1:
                         raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
