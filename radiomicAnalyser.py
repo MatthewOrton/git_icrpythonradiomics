@@ -756,7 +756,15 @@ class radiomicAnalyser:
 
             # grab important parts of dicom
             sopInstUID.append(dcm.SOPInstanceUID)
-            imSlice.append(dcm.RescaleSlope * dcm.pixel_array + dcm.RescaleIntercept)
+            if 'RescaleSlope' in dcm:
+                RescaleSlope = dcm.RescaleSlope
+            else:
+                RescaleSlope = 1.0
+            if 'RescaleIntercept' in dcm:
+                RescaleIntercept = dcm.RescaleIntercept
+            else:
+                RescaleIntercept = 0.0
+            imSlice.append(RescaleSlope * dcm.pixel_array + RescaleIntercept)
             imagePositionPatient.append([float(x) for x in dcm.ImagePositionPatient])
 
         imageData = {}

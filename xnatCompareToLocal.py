@@ -115,6 +115,26 @@ class xnatCompareToLocal:
                             else:
                                 print('Local copy found: ' + xnat_assessor.label+ ' // ' + xnat_assessor.name)
 
+    ##########################
+    def listXnatAssessors(self, nameFilter='', typeFilter=''):
+        # quickly get list of subjects, then open a new connection to xnat for each as it sometimes drops the connection if you only do it once as it takes a long time
+        subjectList = []
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            xnat_subjects = xnat_session.projects[self.projectName].subjects
+            for xnat_subject in xnat_subjects.values():
+                subjectList.append(xnat_subject.label)
+        subjectList.sort()
+        assessorCount = 0
+        for subject in subjectList:
+            with xnat.connect(server=self.serverURL) as xnat_session:
+                xnat_experiments = xnat_session.projects[self.projectName].subjects[subject].experiments
+                for xnat_experiment in xnat_experiments.values():
+                    xnat_assessors = xnat_experiment.assessors
+                    for xnat_assessor in xnat_assessors.values():
+                        if nameFilter in xnat_assessor.name and typeFilter in xnat_assessor.collection_type:
+                            assessorCount += 1
+                            print(str(assessorCount) + ' : ' + subject + ' // ' + xnat_experiment.label + ' // ' + xnat_assessor.label + ' // ' + xnat_assessor.name)
+
 
    ##########################
     def deleteAssessors(self, nameFilter):
