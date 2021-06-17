@@ -31,7 +31,7 @@ from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict=None, assessorSubtractFileName=None):
+    def __init__(self, project, assessorFileName, sopInstDict=None, assessorSubtractFileName=None, axialTol=1e-6):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -42,7 +42,8 @@ class radiomicAnalyser:
         self.paramFileName = project["paramFileName"]
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
-
+        self.axialTol = axialTol
+        
         # these are populated by self.loadImageData() because they are taken from the image dicom files
         # PatientName and dcmPatientName should usually be the same, but sometimes we need to change the patientName that
         # gets written into the spreadsheet when there is a typo/mismatch between the dicom info and other data sources.
@@ -749,7 +750,7 @@ class radiomicAnalyser:
 
             # check image is axial
             axialArr = [1, 0, 0, 0, 1, 0]
-            axialTol = 1e-6
+            axialTol = self.axialTol
             axialErr = [np.abs(np.abs(float(x)) - y) > axialTol for x, y in zip(dcm.ImageOrientationPatient, axialArr)]
             if any(axialErr):
                 raise Exception("Non-axial image referenced by annotation file - not supported yet!")
