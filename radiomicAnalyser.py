@@ -43,7 +43,7 @@ class radiomicAnalyser:
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
         self.axialTol = axialTol
-        
+
         # these are populated by self.loadImageData() because they are taken from the image dicom files
         # PatientName and dcmPatientName should usually be the same, but sometimes we need to change the patientName that
         # gets written into the spreadsheet when there is a typo/mismatch between the dicom info and other data sources.
@@ -1109,7 +1109,7 @@ class radiomicAnalyser:
         return out
 
     ##########################
-    def saveResult(self, writeMode='w', includeHeader=True):
+    def saveResult(self, writeMode='w', includeHeader=True, fileSubscript=''):
 
         headers = []
         row = []
@@ -1176,7 +1176,7 @@ class radiomicAnalyser:
         fullPath = os.path.join(self.outputPath, 'radiomicFeatures', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'radiomicFeatures__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.csv'
+        fileStr = 'radiomicFeatures__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileSubscript + '.csv'
 
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
 
