@@ -105,7 +105,7 @@ class radiomicAnalyser:
         # have added functionality to RadiomicsFeatureExtractor that exposes the probability matrices and filteredImages
         # so we can evaluate whether they make sense or not.  In particular, the binWidths
         segmentNumber = int(1)
-        featureVector, self.probabilityMatrices, self.filteredImages = extractor.execute(imageSitk, maskSitk, segmentNumber)
+        featureVector, self.probabilityMatrices, self.filteredImages, self.quantizedImages = extractor.execute(imageSitk, maskSitk, segmentNumber)
 
         # if extraction with separate directions has been used, then
         # post-process the corresponding features so each value is returned as a new feature with a feature name that includes
@@ -933,7 +933,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, fileStr = '', vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails'):
+    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails'):
 
         def findMaskEdges(mask):
 
@@ -960,8 +960,12 @@ class radiomicAnalyser:
             return edgeMask
 
         # get image array
-        imArr = self.imageData["imageVolume"]
-        maskArr = self.mask
+        if quantizedImageType is None:
+            imArr = self.imageData["imageVolume"]
+            maskArr = self.mask
+        else:
+            imArr = self.quantizedImages[quantizedImageType]
+            maskArr = self.mask
         #imArr = self.filteredImages["original"]["image"]
         #maskArr = self.filteredImages["original"]["mask"]
 
@@ -985,10 +989,13 @@ class radiomicAnalyser:
             imageMontage = np.concatenate((imageMontage, imageBar, imArr[n + 1, :, :][maskCols, :][:, maskRows]), axis=1)
 
         # get grayscale limits
-        if vmin is None:
+        yRef = np.asarray(imArr[maskArr == 1]).reshape(-1, 1)
+        if vmin is None and vmax is None and scaling is None:
             vmin = self.imageData["windowCenter"] - self.imageData["windowWidth"]/2
-        if vmax is None:
             vmax = self.imageData["windowCenter"] + self.imageData["windowWidth"]/2
+        elif scaling=='ROI':
+            vmin = np.min(yRef)
+            vmax = np.max(yRef)
 
         nPlt = 2 + maskArr.shape[0] # extra for a histogram
         pltRows = int(np.round(np.sqrt(2*nPlt/3)))
@@ -1075,7 +1082,6 @@ class radiomicAnalyser:
                 ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==(pltRows*pltCols-1):
                 if np.sum(maskArr)>0:
-                    yRef = np.asarray(imArr[maskArr == 1]).reshape(-1, 1)
                     if bins is None:
                         binParams = self.__getBinParameters()
                         if 'binWidth' in binParams:
