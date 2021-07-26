@@ -67,7 +67,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -101,6 +101,10 @@ class radiomicAnalyser:
         if binCountOverRide is not None:
             extractor.settings["binWidth"] = None
             extractor.settings["binCount"] = binCountOverRide
+
+        if resampledPixelSpacing is not None:
+            extractor.settings["resampledPixelSpacing"] = resampledPixelSpacing
+            extractor.settings["interpolator"] = "sitkLinear"
 
         # have added functionality to RadiomicsFeatureExtractor that exposes the probability matrices and filteredImages
         # so we can evaluate whether they make sense or not.  In particular, the binWidths
@@ -141,7 +145,8 @@ class radiomicAnalyser:
                 thisFeature = featureVector[feat]
                 f0 = thisFeature[anglesStr.index('__p0p0p0')]
                 fInf = thisFeature[anglesStr.index('__inf')]
-                thisFeature[idxValues] = (thisFeature[idxValues] - fInf)/(f0 - fInf)
+                if True: # apply normalization
+                    thisFeature[idxValues] = (thisFeature[idxValues] - fInf)/(f0 - fInf)
                 # remove original item from featureVector (this item is an array, which we can't output to a .csv very easily)
                 featureVector.pop(feat)
                 # put back thisFeature using the original name and the anglesStr postFix
@@ -427,9 +432,12 @@ class radiomicAnalyser:
         maskHere = dcmSeg.pixel_array
         # make sure single slice masks have rows/cols/slices along correct dimension
         if len(maskHere.shape) == 2:
-            maskHere = np.reshape(maskHere, (1, maskHere.shape[1], maskHere.shape[0]))  # the dimension order needs testing!!
+            maskHere = np.reshape(maskHere, (1, maskHere.shape[0], maskHere.shape[1]))  # the dimension order needs testing!!
 
-        self.ImageAnnotationCollection_Description = dcmSeg.ContentLabel
+        if 'SeriesDescription' in dcmSeg:
+            self.ImageAnnotationCollection_Description = dcmSeg.SeriesDescription
+        else:
+            self.ImageAnnotationCollection_Description = dcmSeg.ContentLabel
 
         self.mask = np.zeros(self.imageData["imageVolume"].shape)
         maskCount = 0
@@ -613,34 +621,57 @@ class radiomicAnalyser:
         self.mask = cleanOnce(self.mask, False)
         self.mask = cleanOnce(self.mask, True)
 
-    def removeSmallMaskRegions(self, maxArea=10):
+    def removeSmallMaskRegions(self, maxArea=10, maskIn=None):
+        # organise inputs so that we can use this operation either on the mask variable in the object, or operate on an external variable
+        if maskIn is None:
+            mask = self.mask
+        else:
+            mask = maskIn
+
         # Remove any isolated regions that are below a certain area, except if there is only one region on that slice
 
-        for n in range(self.mask.shape[0]):
-            labelled_mask, num_labels = label(self.mask[n, :, :] == 1)
+        for n in range(mask.shape[0]):
+            labelled_mask, num_labels = label(mask[n, :, :] == 1)
             if num_labels==1:
                 continue
             # remove small regions
-            refined_mask = self.mask[n, :, :]
+            refined_mask = mask[n, :, :]
             for thisLabel in range(num_labels):
                 labelArea = np.sum(refined_mask[labelled_mask == (thisLabel + 1)])
                 if labelArea <= maxArea:
                     refined_mask[labelled_mask == (thisLabel + 1)] = 0
-            self.mask[n, :, :] = refined_mask
+            mask[n, :, :] = refined_mask
 
-    def fillMaskHoles(self, maxArea=float('inf')):
+        if maskIn is None:
+            self.mask = mask
+        else:
+            return mask
+
+
+    def fillMaskHoles(self, maxArea=float('inf'), maskIn=None):
+        # organise inputs so that we can use this operation either on the mask variable in the object, or operate on an external variable
+        if maskIn is None:
+            mask = self.mask
+        else:
+            mask = maskIn
+
         # Remove holes that are below area threshold.  Default maxArea set so that
         # *all* holes will be filled, unless specified otherwise.
 
-        for n in range(self.mask.shape[0]):
-            maskHoles = 1-flood_fill(self.mask[n,:,:],(0,0),1)
+        for n in range(mask.shape[0]):
+            maskHoles = 1-flood_fill(mask[n,:,:],(0,0),1)
             labelled_mask, num_labels = label(maskHoles == 1)
             # remove small holes
             for thisLabel in range(num_labels):
                 maskHere = labelled_mask == (thisLabel+1)
                 if np.sum(maskHere) > maxArea:
                     maskHoles[maskHere] = 0
-            self.mask[n, :, :] = np.logical_xor(self.mask[n, :, :]==1, maskHoles==1)
+            mask[n, :, :] = np.logical_xor(mask[n, :, :]==1, maskHoles==1)
+
+        if maskIn is None:
+            self.mask = mask
+        else:
+            return mask
 
     def selectSlicesMaxAreaMovingAverage(self, width=3):
         if width is not None and self.mask.shape[0]>width:
@@ -751,8 +782,10 @@ class radiomicAnalyser:
             # check image is axial
             axialArr = [1, 0, 0, 0, 1, 0]
             axialTol = self.axialTol
-            axialErr = [np.abs(np.abs(float(x)) - y) > axialTol for x, y in zip(dcm.ImageOrientationPatient, axialArr)]
+            axialErrorValue = [np.abs(np.abs(float(x)) - y) for x, y in zip(dcm.ImageOrientationPatient, axialArr)]
+            axialErr = [np.abs(x) > axialTol for x in axialErrorValue]
             if any(axialErr):
+                print(axialErrorValue)
                 raise Exception("Non-axial image referenced by annotation file - not supported yet!")
 
             # grab important parts of dicom
@@ -825,7 +858,10 @@ class radiomicAnalyser:
         roiObjectLabelFound = list(set([x["label"] for x in references]))
         if len(roiObjectLabelFound)>1:
             raise Exception("More than one roiObject selected from DICOM RT file - only one currently supported. Use more specific roiObjectLabelFilter string.")
-        self.roiObjectLabelFound = roiObjectLabelFound[0]
+        if len(roiObjectLabelFound)==0:
+            self.roiObjectLabelFound = ''
+        else:
+            self.roiObjectLabelFound = roiObjectLabelFound[0]
         return references
 
 
@@ -933,7 +969,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails'):
+    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True):
 
         def findMaskEdges(mask):
 
@@ -964,10 +1000,9 @@ class radiomicAnalyser:
             imArr = self.imageData["imageVolume"]
             maskArr = self.mask
         else:
-            imArr = self.quantizedImages[quantizedImageType]
-            maskArr = self.mask
-        #imArr = self.filteredImages["original"]["image"]
-        #maskArr = self.filteredImages["original"]["mask"]
+            #imArr = self.quantizedImages[quantizedImageType] # uncomment to use this one and comment out the next line
+            imArr = self.filteredImages["original"]["image"]
+            maskArr = self.filteredImages["original"]["mask"]
 
         # crop images to within 20 pixels of the max extent of the mask in all slices
         pad = 20
@@ -994,8 +1029,11 @@ class radiomicAnalyser:
             vmin = self.imageData["windowCenter"] - self.imageData["windowWidth"]/2
             vmax = self.imageData["windowCenter"] + self.imageData["windowWidth"]/2
         elif scaling=='ROI':
-            vmin = np.min(yRef)
-            vmax = np.max(yRef)
+            vmin = np.quantile(yRef, 0.01)
+            vmax = np.quantile(yRef,0.99)
+
+        if bins is None and quantizedImageType is not None:
+            bins =  np.unique(yRef)
 
         nPlt = 2 + maskArr.shape[0] # extra for a histogram
         pltRows = int(np.round(np.sqrt(2*nPlt/3)))
@@ -1081,7 +1119,7 @@ class radiomicAnalyser:
                 ax.set_xlim(minX, maxX)
                 ax.set_ylim(maxY, minY) # to flip y-axis
             elif n==(pltRows*pltCols-1):
-                if np.sum(maskArr)>0:
+                if showHistogram and np.sum(maskArr)>0:
                     if bins is None:
                         binParams = self.__getBinParameters()
                         if 'binWidth' in binParams:
@@ -1089,6 +1127,7 @@ class radiomicAnalyser:
                         elif 'binCount' in binParams:
                             bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
                     ax.hist(yRef, bins, density=True, histtype='stepfilled')
+                    ax.set_xlim([bins[0], bins[-1]])
             else:
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
@@ -1109,7 +1148,7 @@ class radiomicAnalyser:
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
 
         out["fileName"] = os.path.join(fullPath, fileStr)
-        plt.gcf().savefig(out["fileName"],  papertype='a4', orientation='landscape', format='pdf', dpi=1200)
+        plt.gcf().savefig(out["fileName"],  orientation='landscape', format='pdf', dpi=1200) #papertype='a4',
         print('Thumbnail saved '+out["fileName"])
         plt.close()
         return out
@@ -1127,7 +1166,13 @@ class radiomicAnalyser:
         headers.append("StudyPatientName")
         row.append(self.StudyPatientName)
 
-        fileParts = os.path.split(self.assessorFileName)[1].split("__II__")
+        fileName = os.path.split(self.assessorFileName)[1]
+        fileParts = fileName.split("__II__")
+
+        # cheat for cases that haven't been downloaded from XNAT, and therefore have particular filename structure
+        if len(fileParts) != 4:
+            fileNameNoExt = fileName.split('.')[0]
+            fileParts = [fileNameNoExt, fileNameNoExt, fileNameNoExt, fileName]
 
         headers.append("source_XNAT_session")
         row.append(fileParts[1])
@@ -1213,7 +1258,7 @@ class radiomicAnalyser:
                 titleStr = os.path.split(self.assessorFileName)[1]
                 titleStr = titleStr.replace('__II__', '  ').split('.')[0]
                 titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
-                plt.title(titleStr + '  ' + self.roiObjectLabelFound, fontsize=7, fontdict = {'horizontalalignment': 'left'})
+                plt.title(titleStr + '  ' + self.roiObjectLabelFound + '  ' + imageType, fontsize=7, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM', fontsize=fontsize)
@@ -1260,11 +1305,11 @@ class radiomicAnalyser:
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'probabilityMatrices_' + imageType + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '.pdf'
+        fileStr = 'probabilityMatrices_' + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '_' + imageType + '.pdf'
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
 
         outputName = os.path.join(fullPath, fileStr)
-        plt.gcf().savefig(outputName, papertype='a4', orientation='landscape', format='pdf', dpi=1200)
+        plt.gcf().savefig(outputName, orientation='landscape', format='pdf', dpi=1200) #papertype='a4'
         print('probabilityMatrices saved ' + outputName)
         plt.close()
         return outputName
