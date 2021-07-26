@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/Users/morton/Documents/GitHub/icrpythonradiomics/machineLearning')
+
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_string_dtype
@@ -6,6 +9,7 @@ from pyirr import intraclass_correlation
 from featureSelect_correlation import featureSelect_correlation
 from scipy.stats import spearmanr, skew
 from re import search
+
 
 def loadAndPreProcessRadiomicsFile(fileName, index_col=None, featureRemoveStr='source|diagnostics', featureSelectStr='original', correlation_threshold=0.9, iccThreshold = None, followupStr='_followup', reproducibilityStr='_repro', logTransform=False):
 
