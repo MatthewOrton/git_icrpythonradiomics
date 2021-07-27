@@ -5,24 +5,30 @@ import pickle
 
 # make dictionary to find image from its SOPInstanceUID
 # save file and recompute if necessary
+# if sopClassUid is input then it will also output a list of sopInstances that match this sopClassUid
 def getSopInstDict(path):
 
     sopInstDict = {}
+    sopInstToSopClassUidDict = {}
 
     quickLoad = path + '_sopInstDict.pickle'
     if os.path.isfile(quickLoad):
         with open(quickLoad, 'rb') as f:
-            sopInstDict = pickle.load(f)
+            unpickle = pickle.load(f)
+            sopInstDict = unpickle['sopInstDict']
+            sopInstToSopClassUidDict = unpickle['sopInstToSopClassUidDict']
 
     # make list of files that aren't in the pre-computed dictionary
-    imageFiles = list(set(glob.glob(os.path.join(path, '**'), recursive=True)) - set(list(sopInstDict.values())))
+    files = list(set(glob.glob(os.path.join(path, '**'), recursive=True)) - set(list(sopInstDict.values())))
 
-    if len(imageFiles)>0:
+    if len(files)>0:
         print('Updating SOPInstanceUID dictionary:')
-        with progressbar.ProgressBar(max_value=len(imageFiles)) as bar:
-            for n, imageFile in enumerate(imageFiles):
+        with progressbar.ProgressBar(max_value=len(files)) as bar:
+            for n, imageFile in enumerate(files):
                 if not os.path.isdir(imageFile) and pydicom.misc.is_dicom(imageFile):
-                    sopInstDict[pydicom.dcmread(imageFile).SOPInstanceUID] = imageFile
+                    dcm = pydicom.dcmread(imageFile)
+                    sopInstDict[str(dcm.SOPInstanceUID)] = imageFile
+                    sopInstToSopClassUidDict[str(dcm.SOPInstanceUID)] = str(dcm.SOPClassUID)
                 bar.update(n)
         print('Complete')
         print(' ')
@@ -33,6 +39,6 @@ def getSopInstDict(path):
 
     if len(sopInstDict)>0:
         with open(quickLoad, 'wb') as f:
-            pickle.dump(sopInstDict, f)
+            pickle.dump({'sopInstDict':sopInstDict, 'sopInstToSopClassUidDict':sopInstToSopClassUidDict}, f)
 
-    return sopInstDict
+    return sopInstDict, sopInstToSopClassUidDict
