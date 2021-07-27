@@ -725,6 +725,7 @@ class radiomicAnalyser:
         sopInstUID = []
         imSlice = []
         imagePositionPatient = []
+        imagePositionPatientNormal = [] # this is imagePositionPatient projected onto the image normal vector and is used to sort the slices
 
         # get list of unique referencedSOPInstanceUIDs
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
@@ -780,13 +781,19 @@ class radiomicAnalyser:
                 raise Exception("SopInstance dictionary error: SOPInstanceUID found in dicom file does not match dictionary!")
 
             # check image is axial
-            axialArr = [1, 0, 0, 0, 1, 0]
-            axialTol = self.axialTol
-            axialErrorValue = [np.abs(np.abs(float(x)) - y) for x, y in zip(dcm.ImageOrientationPatient, axialArr)]
-            axialErr = [np.abs(x) > axialTol for x in axialErrorValue]
-            if any(axialErr):
-                print(axialErrorValue)
-                raise Exception("Non-axial image referenced by annotation file - not supported yet!")
+            # axialArr = [1, 0, 0, 0, 1, 0]
+            # axialTol = self.axialTol
+            # axialErrorValue = [np.abs(np.abs(float(x)) - y) for x, y in zip(dcm.ImageOrientationPatient, axialArr)]
+            # axialErr = [np.abs(x) > axialTol for x in axialErrorValue]
+            # if any(axialErr):
+            #     print(axialErrorValue)
+            #     raise Exception("Non-axial image referenced by annotation file - not supported yet!")
+
+            imPos = np.array([float(x) for x in dcm.ImagePositionPatient])
+            imagePositionPatient.append(imPos)
+
+            imOri = np.array([float(x) for x in dcm.ImageOrientationPatient])
+            imagePositionPatientNormal.append(np.dot(imPos, np.cross(imOri[0:3], imOri[3:])))
 
             # grab important parts of dicom
             sopInstUID.append(dcm.SOPInstanceUID)
@@ -799,7 +806,6 @@ class radiomicAnalyser:
             else:
                 RescaleIntercept = 0.0
             imSlice.append(RescaleSlope * dcm.pixel_array + RescaleIntercept)
-            imagePositionPatient.append([float(x) for x in dcm.ImagePositionPatient])
 
         imageData = {}
         # assuming these are the same for all referenced SOPInstances
@@ -821,11 +827,12 @@ class radiomicAnalyser:
             imageData["windowWidth"] = 100
 
         # sort on slice location and store items in self
-        sliceLocation = [x[2] for x in imagePositionPatient]
-        imageData["sopInstUID"] = [x for _, x in sorted(zip(sliceLocation, sopInstUID))]
-        imSlice = [x for _, x in sorted(zip(sliceLocation, imSlice))]
+        imageData["sopInstUID"] = [x for _, x in sorted(zip(imagePositionPatientNormal, sopInstUID))]
+        imSlice = [x for _, x in sorted(zip(imagePositionPatientNormal, imSlice))]
         imageData["imageVolume"] = np.asarray(imSlice)
-        imageData["imagePositionPatient"] = [x for _, x in sorted(zip(sliceLocation, imagePositionPatient))]
+        imageData["imagePositionPatient"] = [x for _, x in sorted(zip(imagePositionPatientNormal, imagePositionPatient))]
+        imagePositionPatientNormal.sort()
+        imageData["imagePositionPatientNormal"] = imagePositionPatientNormal
         self.imageData = imageData
         # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
         # we need to reset back
