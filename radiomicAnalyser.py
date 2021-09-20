@@ -17,9 +17,8 @@ from skimage import draw
 from skimage.segmentation import flood_fill
 import warnings
 import copy
-
 from scipy.stats import norm
-
+import inspect
 
 # add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
@@ -97,10 +96,12 @@ class radiomicAnalyser:
         if binWidthOverRide is not None:
             extractor.settings["binWidth"] = binWidthOverRide
             extractor.settings["binCount"] = None
+            self.binWidthOverRide = binWidthOverRide
 
         if binCountOverRide is not None:
             extractor.settings["binWidth"] = None
             extractor.settings["binCount"] = binCountOverRide
+            self.binCountOverRide = binCountOverRide
 
         if resampledPixelSpacing is not None:
             extractor.settings["resampledPixelSpacing"] = resampledPixelSpacing
@@ -416,9 +417,15 @@ class radiomicAnalyser:
         with open(self.paramFileName) as file:
             params = yaml.full_load(file)
         if 'binWidth' in params['setting']:
-            return {'binWidth': params['setting']['binWidth']}
+            if hasattr(self,'binWidthOverRide'):
+                return {'binWidth': self.binWidthOverRide}
+            else:
+                return {'binWidth': params['setting']['binWidth']}
         elif 'binCount' in params['setting']:
-            return {'binCount': params['setting']['binCount']}
+            if hasattr(self,'binCountOverRide'):
+                return {'binCount': self.binCountOverRide}
+            else:
+                return {'binCount': params['setting']['binCount']}
         else:
             return None
 
@@ -439,24 +446,21 @@ class radiomicAnalyser:
         else:
             self.ImageAnnotationCollection_Description = dcmSeg.ContentLabel
 
+        # find ReferencedSegmentNumber for the ROI we have already found
+        referencedSegmentNumber = [x.SegmentNumber for x in dcmSeg.SegmentSequence if x.SegmentLabel == self.roiObjectLabelFound]
+        if len(referencedSegmentNumber) != 1:
+            raise Exception("More than one segment with same name found in Dicom Seg file!")
+        referencedSegmentNumber = referencedSegmentNumber[0]
+
         self.mask = np.zeros(self.imageData["imageVolume"].shape)
         maskCount = 0
         if 'DerivationImageSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcmSeg.PerFrameFunctionalGroupsSequence[0]:
             for n, funGrpSeq in enumerate(dcmSeg.PerFrameFunctionalGroupsSequence):
-                if len(funGrpSeq.DerivationImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-                if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-                if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                    raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-                referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-                referencedSegmentLabel = dcmSeg.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-                if (self.roiObjectLabelFilter is not None) and re.match(self.roiObjectLabelFilter, referencedSegmentLabel) is None:
-                        continue
-                thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
-                sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
-                self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
-                maskCount += 1
+                if funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber == referencedSegmentNumber:
+                    thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
+                    sliceIdx = np.where([x == thisSopInstUID for x in self.imageData["sopInstUID"]])[0][0]
+                    self.mask[sliceIdx, :, :] = np.logical_or(self.mask[sliceIdx, :, :], maskHere[n,:,:])
+                    maskCount += 1
 
         # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
         # ignore label and put mask slices in as necessary
@@ -726,6 +730,7 @@ class radiomicAnalyser:
         imSlice = []
         imagePositionPatient = []
         imagePositionPatientNormal = [] # this is imagePositionPatient projected onto the image normal vector and is used to sort the slices
+        imageInstanceNumber = []
 
         # get list of unique referencedSOPInstanceUIDs
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
@@ -794,6 +799,7 @@ class radiomicAnalyser:
 
             imOri = np.array([float(x) for x in dcm.ImageOrientationPatient])
             imagePositionPatientNormal.append(np.dot(imPos, np.cross(imOri[0:3], imOri[3:])))
+            imageInstanceNumber.append(dcm.InstanceNumber)
 
             # grab important parts of dicom
             sopInstUID.append(dcm.SOPInstanceUID)
@@ -827,12 +833,15 @@ class radiomicAnalyser:
             imageData["windowWidth"] = 100
 
         # sort on slice location and store items in self
-        imageData["sopInstUID"] = [x for _, x in sorted(zip(imagePositionPatientNormal, sopInstUID))]
-        imSlice = [x for _, x in sorted(zip(imagePositionPatientNormal, imSlice))]
+        reverseFlag = True
+        imageData["sopInstUID"] = [x for _, x in sorted(zip(imagePositionPatientNormal, sopInstUID), reverse=reverseFlag)]
+        imSlice = [x for _, x in sorted(zip(imagePositionPatientNormal, imSlice), reverse=reverseFlag)]
         imageData["imageVolume"] = np.asarray(imSlice)
-        imageData["imagePositionPatient"] = [x for _, x in sorted(zip(imagePositionPatientNormal, imagePositionPatient))]
+        imageData["imagePositionPatient"] = [x for _, x in sorted(zip(imagePositionPatientNormal, imagePositionPatient), reverse=reverseFlag)]
+        imageData["imageInstanceNumber"] = [x for _, x in sorted(zip(imagePositionPatientNormal, imageInstanceNumber), reverse=reverseFlag)]
         imagePositionPatientNormal.sort()
         imageData["imagePositionPatientNormal"] = imagePositionPatientNormal
+
         self.imageData = imageData
         # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
         # we need to reset back
@@ -961,7 +970,6 @@ class radiomicAnalyser:
                                              "label": label})
         return annotationObjectList
 
-
     ##########################
     def __getAnnotationUID(self):
         if self.assessorStyle['format'].lower() == 'dcm':
@@ -976,7 +984,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True):
+    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True, titleFontSize=7):
 
         def findMaskEdges(mask):
 
@@ -1088,7 +1096,13 @@ class radiomicAnalyser:
 
         for n, ax in enumerate(fPlt.axes):
             if n<(nPlt-2):
-                ax.imshow(imArr[n,:,:], cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
+                imDisp = imArr[n,:,:]
+                #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
+                #nyy = np.round(minY+0.2*(maxY-minY)).astype(int)
+                #imDisp[0:nxx, 0:nyy] = vmin
+                ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
+                # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
+                ax.text(0.02, 0.98, str(self.imageData["imageInstanceNumber"][n]), color='c', fontsize=3, transform=ax.transAxes, ha='left', va='top')
                 if showContours:
                     contours = self.contours[n]
                     for contour in contours:
@@ -1146,7 +1160,7 @@ class radiomicAnalyser:
 
         titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound + '  '  + self.ImageAnnotationCollection_Description
         titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
-        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=7)
+        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize)
 
         fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
         if not os.path.exists(fullPath):
@@ -1158,6 +1172,10 @@ class radiomicAnalyser:
         plt.gcf().savefig(out["fileName"],  orientation='landscape', format='pdf', dpi=1200) #papertype='a4',
         print('Thumbnail saved '+out["fileName"])
         plt.close()
+
+        out["vmin"] = vmin
+        out["vmax"] = vmax
+
         return out
 
     ##########################
@@ -1252,7 +1270,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveProbabilityMatrices(self, imageType='original', mainTitle=True, showHistogram=True):
+    def saveProbabilityMatrices(self, imageType='original', mainTitle=True, mainTitleStr = '', showHistogram=True, fileStr='', supressGLCMdiagonal=False):
 
         fig = plt.figure()
         columns = 7
@@ -1265,11 +1283,14 @@ class radiomicAnalyser:
                 titleStr = os.path.split(self.assessorFileName)[1]
                 titleStr = titleStr.replace('__II__', '  ').split('.')[0]
                 titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
-                plt.title(titleStr + '  ' + self.roiObjectLabelFound + '  ' + imageType, fontsize=7, fontdict = {'horizontalalignment': 'left'})
+                plt.title(titleStr + '  ' + self.roiObjectLabelFound + '  ' + imageType + '  ' + mainTitleStr, fontsize=7, fontdict = {'horizontalalignment': 'left'})
 
             if np.mod(n,7)==0:
                 plt.ylabel('GLCM', fontsize=fontsize)
-            plt.imshow(self.probabilityMatrices[imageType + "_glcm"][0,:,:,n])
+            pMat = self.probabilityMatrices[imageType + "_glcm"][0,:,:,n]
+            if supressGLCMdiagonal:
+                pMat *= (1 - np.eye(pMat.shape[0]))
+            plt.imshow(pMat)
             plt.tick_params(labelbottom=False, labelleft=False, bottom=False, left=False)
 
         # show GLRLM
@@ -1312,7 +1333,7 @@ class radiomicAnalyser:
         fullPath = os.path.join(self.outputPath, 'probabilityMatrices', 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'probabilityMatrices_' + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '_' + imageType + '.pdf'
+        fileStr = 'probabilityMatrices_' + '__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '_' + imageType + '_' + fileStr + '.pdf'
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
 
         outputName = os.path.join(fullPath, fileStr)
