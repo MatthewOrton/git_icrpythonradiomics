@@ -19,6 +19,7 @@ import warnings
 import copy
 from scipy.stats import norm
 import inspect
+import nrrd
 
 # add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
@@ -333,6 +334,10 @@ class radiomicAnalyser:
             self.__createMaskDcmRts()
         if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nii':
             self.mask = np.asarray(nib.load(self.assessorFileName).get_data())
+        if self.assessorStyle['type'].lower() == 'seg' and self.assessorStyle['format'].lower() == 'nrrd':
+            self.mask, _ = nrrd.read(self.assessorFileName)
+            self.mask = np.moveaxis(self.mask, -1, 0)
+
         # ... others to come
         #
         # keep a copy of the original mask
@@ -345,7 +350,9 @@ class radiomicAnalyser:
     def removeEmptySlices(self):
         sliceUse = np.sum(self.mask, axis=(1,2))>0
         self.mask = self.mask[sliceUse,:,:]
+        self.maskOriginal = self.maskOriginal[sliceUse,:,:]
         self.imageData["imageVolume"] = self.imageData["imageVolume"][sliceUse, :, :]
+        self.imageDataOriginal["imageVolume"] = self.imageDataOriginal["imageVolume"][sliceUse, :, :]
 
 
     ##########################
@@ -700,7 +707,7 @@ class radiomicAnalyser:
     def loadImageData(self, fileType=None, fileName = None):
 
         # direct loading if specified
-        if fileType is 'nii':
+        if fileType == 'nii':
             imageData = {}
             imageData["imageVolume"] = np.asarray(nib.load(fileName).get_data())
             # for nifti metadata just put in default values for now
@@ -718,6 +725,40 @@ class radiomicAnalyser:
             self.ReferencedSeriesUID = ''
             self.ImageAnnotationCollection_Description = ''
             self.roiObjectLabelFound = ''
+
+            # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
+            # we need to reset back
+            self.imageDataOriginal = copy.deepcopy(self.imageData)
+            return
+
+        if fileType == 'nrrd':
+            imageData = {}
+            imageData["imageVolume"], fileheader = nrrd.read(fileName)
+            # z axis needs to be first
+            imageData['imageVolume'] = np.moveaxis(imageData['imageVolume'], -1, 0)
+            spaceDirections = np.asarray(fileheader['space directions'])
+            # assuming axial data, so slice thickness is in z co-ordinate
+            sliceThickness = spaceDirections[2,2]
+            imageData["imagePositionPatient"] = []
+            imageData["sopInstUID"] = []
+            imageData["imageInstanceNumber"] = []
+            for n in range(imageData["imageVolume"].shape[2]):
+                imageData["imagePositionPatient"].append([0, 0, n*sliceThickness])
+                imageData["sopInstUID"].append(str(n))
+                imageData["imageInstanceNumber"].append(n)
+            imageData["imageOrientationPatient"] = [0, 0, 1, 0, 1, 0] # default
+            imageData["pixelSpacing"] = [spaceDirections[0,0], spaceDirections[1,1]] # this is hard-coded for IBSI digital phantom for now
+            imageData["windowCenter"] = 300 # default for now
+            imageData["windowWidth"] = 600
+            self.imageData = imageData
+            # some other metadata from the assessor that needs to be present
+            self.ReferencedSeriesUID = ''
+            self.ImageAnnotationCollection_Description = ''
+            self.roiObjectLabelFound = ''
+
+            # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
+            # we need to reset back
+            self.imageDataOriginal = copy.deepcopy(self.imageData)
             return
 
         refUID = self.__getReferencedUIDs()
@@ -864,6 +905,8 @@ class radiomicAnalyser:
             references = self.__getReferencedUIDsDicom()
         elif self.assessorStyle['format'].lower() == 'xml':
             references = self.__getReferencedUIDsAimXml()
+        else:
+            references = []
         # select segments matching segmentLabel input
         if self.roiObjectLabelFilter is not None:
             indToKeep = [re.match(self.roiObjectLabelFilter, x["label"]) is not None for x in references]
@@ -979,6 +1022,8 @@ class radiomicAnalyser:
             xDOM = minidom.parse(self.assessorFileName)
             annotationUID = xDOM.getElementsByTagName('ImageAnnotation').item(0).getElementsByTagName('uniqueIdentifier').item(0).getAttribute('root')
         elif self.assessorStyle['format'].lower() == 'nii':
+            annotationUID = ''
+        elif self.assessorStyle['format'].lower() == 'nrrd':
             annotationUID = ''
         return annotationUID
 
