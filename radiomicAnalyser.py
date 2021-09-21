@@ -351,8 +351,16 @@ class radiomicAnalyser:
         sliceUse = np.sum(self.mask, axis=(1,2))>0
         self.mask = self.mask[sliceUse,:,:]
         self.maskOriginal = self.maskOriginal[sliceUse,:,:]
+        #
         self.imageData["imageVolume"] = self.imageData["imageVolume"][sliceUse, :, :]
+        self.imageData["imageInstanceNumber"] = [i for i,j in zip(self.imageData["imageInstanceNumber"],sliceUse) if j]
+        self.imageData["sopInstUID"] = [i for i,j in zip(self.imageData["sopInstUID"],sliceUse) if j]
+        self.imageData["imagePositionPatient"] = [i for i,j in zip(self.imageData["imagePositionPatient"],sliceUse) if j]
+        #
         self.imageDataOriginal["imageVolume"] = self.imageDataOriginal["imageVolume"][sliceUse, :, :]
+        self.imageDataOriginal["imageInstanceNumber"] = [i for i,j in zip(self.imageDataOriginal["imageInstanceNumber"],sliceUse) if j]
+        self.imageDataOriginal["sopInstUID"] = [i for i,j in zip(self.imageDataOriginal["sopInstUID"],sliceUse) if j]
+        self.imageDataOriginal["imagePositionPatient"] = [i for i,j in zip(self.imageDataOriginal["imagePositionPatient"],sliceUse) if j]
 
 
     ##########################
@@ -1060,8 +1068,8 @@ class radiomicAnalyser:
             imArr = self.imageData["imageVolume"]
             maskArr = self.mask
         else:
-            #imArr = self.quantizedImages[quantizedImageType] # uncomment to use this one and comment out the next line
-            imArr = self.filteredImages["original"]["image"]
+            imArr = self.quantizedImages[quantizedImageType] # uncomment to use this one and comment out the next line
+            #imArr = self.filteredImages["original"]["image"]
             maskArr = self.filteredImages["original"]["mask"]
 
         # crop images to within 20 pixels of the max extent of the mask in all slices
