@@ -20,6 +20,7 @@ import copy
 from scipy.stats import norm
 import inspect
 import nrrd
+import uuid
 
 # add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
@@ -31,12 +32,13 @@ from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict=None, assessorSubtractFileName=None, axialTol=1e-6):
+    def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
         self.assessorStyle = project["assessorStyle"]
         self.sopInstDict = sopInstDict
+        self.extraDictionaries = extraDictionaries
         self.outputPath = project["outputPath"]
         self.roiObjectLabelFilter = project["roiObjectLabelFilter"]
         self.paramFileName = project["paramFileName"]
@@ -67,7 +69,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, binEdgesOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -94,12 +96,20 @@ class radiomicAnalyser:
         extractor = featureextractor.RadiomicsFeatureExtractor(self.paramFileName)
         setVerbosity(40)
 
+        if binEdgesOverRide is not None:
+            extractor.settings["binEdges"] = binEdgesOverRide
+            extractor.settings["binWidth"] = None
+            extractor.settings["binCount"] = None
+            self.binEdgesOverRide = binEdgesOverRide
+
         if binWidthOverRide is not None:
+            extractor.settings["binEdges"] = None
             extractor.settings["binWidth"] = binWidthOverRide
             extractor.settings["binCount"] = None
             self.binWidthOverRide = binWidthOverRide
 
         if binCountOverRide is not None:
+            extractor.settings["binEdges"] = None
             extractor.settings["binWidth"] = None
             extractor.settings["binCount"] = binCountOverRide
             self.binCountOverRide = binCountOverRide
@@ -712,7 +722,7 @@ class radiomicAnalyser:
         return np.dot(Vr, np.dot(x, np.transpose(Vc))) / (self.fineGrid * self.fineGrid)
 
     ##########################
-    def loadImageData(self, fileType=None, fileName = None):
+    def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False):
 
         # direct loading if specified
         if fileType == 'nii':
@@ -825,6 +835,30 @@ class radiomicAnalyser:
             else:
                 self.ModalitySpecificParameters[parameter] = ''
 
+        if includeExtraTopAndBottomSlices:
+            if not hasattr(self, 'extraDictionaries'):
+                raise Exception('To include extra top and bottom slices you need to input an instanceNumberDict')
+            else:
+                instanceDict = self.extraDictionaries['instanceNumDict']
+                sopInst2instanceNumberDict = self.extraDictionaries['sopInst2instanceNumberDict']
+            # find extra slices from the InstanceNumbers in the referenced SopInstances
+            instanceNumbers = list()
+            for refSopInstUID in refSopInstUIDs:
+                instanceNumbers.append(int(sopInst2instanceNumberDict[refSopInstUID]))
+            if (min(instanceNumbers)-1) in instanceDict.keys():
+                extraSopInstance = instanceDict[min(instanceNumbers)-1]['SOPInstanceUID']
+                refSopInstUIDs.append(extraSopInstance)
+            if (min(instanceNumbers)-2) in instanceDict.keys():
+                extraSopInstance = instanceDict[min(instanceNumbers)-2]['SOPInstanceUID']
+                refSopInstUIDs.append(extraSopInstance)
+            if (max(instanceNumbers)+1) in instanceDict.keys():
+                extraSopInstance = instanceDict[max(instanceNumbers)+1]['SOPInstanceUID']
+                refSopInstUIDs.append(extraSopInstance)
+            if (max(instanceNumbers)+2) in instanceDict.keys():
+                extraSopInstance = instanceDict[max(instanceNumbers)+2]['SOPInstanceUID']
+                refSopInstUIDs.append(extraSopInstance)
+
+
         for refSopInstUID in refSopInstUIDs:
             dcm = pydicom.dcmread(self.sopInstDict[refSopInstUID])
 
@@ -891,6 +925,9 @@ class radiomicAnalyser:
         imagePositionPatientNormal.sort()
         imageData["imagePositionPatientNormal"] = imagePositionPatientNormal
 
+        print('Slice thickness = ' + str(dcm.SliceThickness))
+        print('Slice spacing = ' + str(imagePositionPatientNormal[1]-imagePositionPatientNormal[0]))
+
         self.imageData = imageData
         # we might do some permutations on the voxel locations, so keep a copy of the original image data, in case
         # we need to reset back
@@ -904,7 +941,7 @@ class radiomicAnalyser:
         # get pixel values inside mask
         voxels = self.imageData["imageVolume"][np.where(self.mask == 1)]
         idxShuffle = np.random.permutation(len(voxels))
-        self.imageData["imageVolume"][np.where(self.mask == 1)] = voxels[idxShuffle]
+        self.imageData["imageVolume"][self.mask == 1] = voxels[idxShuffle]
 
 
     ##########################
@@ -1037,7 +1074,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True, titleFontSize=7):
+    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, padSize=10, minSize=40, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True, titleFontSize=7, linewidth=0.2):
 
         def findMaskEdges(mask):
 
@@ -1072,7 +1109,7 @@ class radiomicAnalyser:
             #imArr = self.filteredImages["original"]["image"]
             maskArr = self.filteredImages["original"]["mask"]
 
-        # crop images to within 20 pixels of the max extent of the mask in all slices
+        # crop images to within pad pixels of the max extent of the mask in all slices
         pad = 20
         maskRows = np.sum(np.sum(maskArr, axis=0) > 0, axis=0) > 0
         maskRows[pad:] = np.logical_or(maskRows[pad:], maskRows[0:-pad])
@@ -1109,7 +1146,6 @@ class radiomicAnalyser:
         plt.clf()
         fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
-        linewidth = 0.2
         if np.sum(maskArr)==0:
             minX = 0
             maxX = maskArr.shape[2]
@@ -1129,8 +1165,6 @@ class radiomicAnalyser:
         #         minY = np.min([minY, np.min(contour["y"])])
         #         maxY = np.max([maxY, np.max(contour["y"])])
         # make spans at least minSize pixels, then add padSize
-        minSize = 40
-        padSize = 10
         midX = 0.5*(minX + maxX)
         minX = np.min([midX - minSize/2, minX])-padSize
         maxX = np.max([midX + minSize/2, maxX])+padSize
@@ -1202,6 +1236,13 @@ class radiomicAnalyser:
                             bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
                     ax.hist(yRef, bins, density=True, histtype='stepfilled')
                     ax.set_xlim([bins[0], bins[-1]])
+                else:
+                    ax.xaxis.set_visible(False)
+                    ax.yaxis.set_visible(False)
+                    ax.spines['top'].set_visible(False)
+                    ax.spines['bottom'].set_visible(False)
+                    ax.spines['left'].set_visible(False)
+                    ax.spines['right'].set_visible(False)
             else:
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
@@ -1211,14 +1252,14 @@ class radiomicAnalyser:
                 ax.spines['right'].set_visible(False)
 
 
-        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound + '  '  + self.ImageAnnotationCollection_Description
+        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
         titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize)
 
         fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
         if not os.path.exists(fullPath):
             os.makedirs(fullPath)
-        fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + fileStr + '.pdf'
+        fileStr = 'roiThumbnail__' + os.path.split(self.assessorFileName)[1].split('.')[0] + '_' + self.roiObjectLabelFound + fileStr + '.pdf'
         fileStr = fileStr.replace(self.dcmPatientName, self.StudyPatientName)
 
         out["fileName"] = os.path.join(fullPath, fileStr)
@@ -1300,6 +1341,14 @@ class radiomicAnalyser:
 
         headers.extend(list(self.featureVector.keys()))
         for h in list(self.featureVector.keys()):
+            # special case that needs modification
+            # diagnostics_Configuration_Settings element may contain a list of binEdges, and this will usually be too long to fit into the csv output
+            # modify the binEdges variable so that it becomes a 3 element list with [start, stop, step]
+            if 'diagnostics_Configuration_Settings' in h:
+                thisFeature = self.featureVector.get(h)
+                if 'binEdges' in thisFeature.keys() and thisFeature['binEdges'] is not None:
+                    thisFeature['binEdges'] = [thisFeature['binEdges'][0], thisFeature['binEdges'][-1], thisFeature['binEdges'][1]-thisFeature['binEdges'][0]]
+                    self.featureVector[h] = thisFeature
             row.append(self.featureVector.get(h, "N/A"))
 
         fullPath = os.path.join(self.outputPath, 'radiomicFeatures', 'subjects')
@@ -1311,6 +1360,11 @@ class radiomicAnalyser:
 
         outputName = os.path.join(fullPath, fileStr)
 
+        if os.path.exists(outputName):
+            outputName = outputName.replace('.csv', '_'+str(uuid.uuid1())+'.csv')
+            print('\033[1;31;48m' + '_' * 50)
+            print('File name clash!! Added UID for uniqueness')
+            print('_' * 50 + '\033[0;30;48m')
 
         with open(outputName, writeMode) as fo:
             writer = csv.writer(fo, lineterminator='\n')
