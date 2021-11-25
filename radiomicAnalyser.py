@@ -32,7 +32,7 @@ from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6):
+    def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0]):
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -45,6 +45,7 @@ class radiomicAnalyser:
         self.assessorSubtractFileName = assessorSubtractFileName
         self.ImageAnnotationCollection_Description = ' '
         self.axialTol = axialTol
+        self.roiShift = roiShift
 
         # these are populated by self.loadImageData() because they are taken from the image dicom files
         # PatientName and dcmPatientName should usually be the same, but sometimes we need to change the patientName that
@@ -594,7 +595,7 @@ class radiomicAnalyser:
             # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
             # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
             # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
-            fill_row_coords, fill_col_coords = draw.polygon(y, x, (mask.shape[1], mask.shape[2]))
+            fill_row_coords, fill_col_coords = draw.polygon(y+self.roiShift[1], x+self.roiShift[0], (mask.shape[1], mask.shape[2]))
             mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
 
             # keep contours so we can display on thumbnail if we need to
@@ -1192,11 +1193,19 @@ class radiomicAnalyser:
                 ax.text(0.02, 0.98, str(self.imageData["imageInstanceNumber"][n]), color='c', fontsize=3, transform=ax.transAxes, ha='left', va='top')
                 if showContours:
                     contours = self.contours[n]
+                    dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
+                    dy = self.roiShift[1]
                     for contour in contours:
-                        ax.plot([x for x in contour["x"]], [y for y in contour["y"]], 'c', linewidth=linewidth)
-                    contoursDelete = self.contoursDelete[n]
-                    for contourDelete in contoursDelete:
-                        ax.plot([x for x in contourDelete["x"]], [y for y in contourDelete["y"]], 'r', linewidth=linewidth)
+                        # make sure will be closed
+                        xPlot = [x+dx for x in contour["x"]]+[contour['x'][0]+dx]
+                        yPlot = [y+dy for y in contour["y"]]+[contour['y'][0]+dy]
+                        ax.plot(xPlot, yPlot, 'b', linewidth=linewidth)
+                    if hasattr(self,'contoursDelete'):
+                        contoursDelete = self.contoursDelete[n]
+                        for contourDelete in contoursDelete:
+                            xPlot = [x+dx for x in contourDelete["x"]] + [contourDelete['x'][0]+dx]
+                            yPlot = [y+dy for y in contourDelete["y"]] + [contourDelete['y'][0]+dy]
+                            ax.plot(xPlot, yPlot, 'r', linewidth=linewidth)
                 maskHere = maskArr[n,:,:]
                 if showMaskBoundary:
                     idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
