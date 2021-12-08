@@ -70,7 +70,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, binEdgesOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, binEdgesOverRide=None, gldm_aOverRide=None, distancesOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -115,6 +115,12 @@ class radiomicAnalyser:
             extractor.settings["binCount"] = binCountOverRide
             self.binCountOverRide = binCountOverRide
 
+        if gldm_aOverRide is not None:
+            extractor.settings['gldm_a'] = gldm_aOverRide
+
+        if distancesOverRide is not None:
+            extractor.settings['distances'] = distancesOverRide
+
         if resampledPixelSpacing is not None:
             extractor.settings["resampledPixelSpacing"] = resampledPixelSpacing
             extractor.settings["interpolator"] = "sitkLinear"
@@ -123,6 +129,13 @@ class radiomicAnalyser:
         # so we can evaluate whether they make sense or not.  In particular, the binWidths
         segmentNumber = int(1)
         featureVector, self.probabilityMatrices, self.filteredImages, self.quantizedImages = extractor.execute(imageSitk, maskSitk, segmentNumber)
+
+        if 'firstorder' in extractor.enabledFeatures:
+            pixels = self.imageData['imageVolume'][self.mask == 1]
+            # pyradiomics already computes the 10th, 50th and 90th centiles, so skip these here
+            qs = np.hstack((0.05, np.linspace(0.15, 0.45, 6), np.linspace(0.55, 0.85, 6), 0.95))
+            for q in qs:
+                featureVector['original_histogram_' + str((q * 100).round().astype(int)) + 'Percentile'] = np.quantile(pixels, q)
 
         # if extraction with separate directions has been used, then
         # post-process the corresponding features so each value is returned as a new feature with a feature name that includes
@@ -1218,18 +1231,19 @@ class radiomicAnalyser:
                     ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
                     # overplot holes if there are present
                     if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
+                        holeColor = 'c'
                         maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
                         idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
-                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
                                 linewidth=linewidth)
                         idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
-                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), 'b',
+                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
                                 linewidth=linewidth)
                         idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
-                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
                                 linewidth=linewidth)
                         idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
-                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), 'b',
+                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
                                 linewidth=linewidth)
                 ax.xaxis.set_visible(False)
                 ax.yaxis.set_visible(False)
