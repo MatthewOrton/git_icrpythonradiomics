@@ -1,9 +1,10 @@
+import sys
 import numpy as np
 from sklearn.datasets import load_iris, make_moons
 from matplotlib import pyplot as plt
 from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV, cross_val_score, cross_validate, KFold, RepeatedKFold, StratifiedKFold, RepeatedStratifiedKFold, cross_val_predict
-from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve, plot_roc_curve, roc_auc_score
+from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve, roc_auc_score
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.gaussian_process import GaussianProcessClassifier
@@ -16,7 +17,6 @@ from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegression, PassiveAggressiveClassifier
 from sklearn.utils import resample
-import sys
 from plot_roc_cv import plot_roc_cv
 import copy
 from sklearn.pipeline import Pipeline

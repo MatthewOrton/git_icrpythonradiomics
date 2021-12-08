@@ -3,7 +3,7 @@ from sklearn.datasets import load_iris, make_moons
 from matplotlib import pyplot as plt
 from sklearn.svm import SVC
 from sklearn.model_selection import GridSearchCV, cross_val_score, cross_validate, StratifiedKFold, RepeatedStratifiedKFold, cross_val_predict
-from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve, plot_roc_curve
+from sklearn.metrics import accuracy_score, make_scorer, matthews_corrcoef, roc_curve
 import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from sklearn.gaussian_process import GaussianProcessClassifier
