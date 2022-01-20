@@ -7,9 +7,10 @@ from sklearn.utils.validation import check_is_fitted
 
 class featureSelect_correlation(BaseEstimator, SelectorMixin):
 
-    def __init__(self, threshold=0.75, exact=False):
+    def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False):
         self.threshold = threshold
         self.exact = exact
+        self.keepFirstColumn = keepFirstColumn  # this input forces algorithm to keep the first column - useful if we know that a particular feature (e.g. tumour size) is likely to be informative and interpretable, so we want to keep it all the time and discard and features that are correlated with it
 
     def fit(self, X, y=None):
 
@@ -34,19 +35,32 @@ class featureSelect_correlation(BaseEstimator, SelectorMixin):
                 idx = np.nonzero(xCorr == xCorrMax)
                 i0 = idx[0][0]
                 i1 = idx[1][0]
-                # get column for i0 and i1, and remove the diagonal terms and the terms for (i0, i1) or (i1, i0)
-                x0 = np.delete(xCorr[:, i0], [i0, i1])
-                x1 = np.delete(xCorr[:, i1], [i0, i1])
-                if np.nanmean(x0) > np.nanmean(x1):
-                    # remove feature i0
-                    colInd = np.delete(colInd, i0)
-                    xCorr = np.delete(xCorr, i0, axis=0)
-                    xCorr = np.delete(xCorr, i0, axis=1)
+
+                if self.keepFirstColumn and (i0==0 or i1==0):
+                    if i1==0:
+                        # remove feature i0
+                        colInd = np.delete(colInd, i0)
+                        xCorr = np.delete(xCorr, i0, axis=0)
+                        xCorr = np.delete(xCorr, i0, axis=1)
+                    else:
+                        # remove feature i1
+                        colInd = np.delete(colInd, i1)
+                        xCorr = np.delete(xCorr, i1, axis=0)
+                        xCorr = np.delete(xCorr, i1, axis=1)
                 else:
-                    # remove feature i1
-                    colInd = np.delete(colInd, i1)
-                    xCorr = np.delete(xCorr, i1, axis=0)
-                    xCorr = np.delete(xCorr, i1, axis=1)
+                    # get column for i0 and i1, and remove the diagonal terms and the terms for (i0, i1) or (i1, i0)
+                    x0 = np.delete(xCorr[:, i0], [i0, i1])
+                    x1 = np.delete(xCorr[:, i1], [i0, i1])
+                    if np.nanmean(x0) > np.nanmean(x1):
+                        # remove feature i0
+                        colInd = np.delete(colInd, i0)
+                        xCorr = np.delete(xCorr, i0, axis=0)
+                        xCorr = np.delete(xCorr, i0, axis=1)
+                    else:
+                        # remove feature i1
+                        colInd = np.delete(colInd, i1)
+                        xCorr = np.delete(xCorr, i1, axis=0)
+                        xCorr = np.delete(xCorr, i1, axis=1)
                 xCorrMax = np.nanmax(xCorr)
 
             # at this stage there will be two or more features left.  If there are two features left then leave them both if their correlation
