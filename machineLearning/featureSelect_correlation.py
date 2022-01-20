@@ -3,20 +3,42 @@ import numpy as np
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection.base import SelectorMixin
 from sklearn.utils.validation import check_is_fitted
-
+import pandas as pd
 
 class featureSelect_correlation(BaseEstimator, SelectorMixin):
 
-    def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False):
+    def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False, namedColumnsKeep=[]):
         self.threshold = threshold
         self.exact = exact
         self.keepFirstColumn = keepFirstColumn  # this input forces algorithm to keep the first column - useful if we know that a particular feature (e.g. tumour size) is likely to be informative and interpretable, so we want to keep it all the time and discard and features that are correlated with it
 
-    def fit(self, X, y=None):
+        # make sure self.ignoreColumns is a list, even if it only has one element
+        if isinstance(namedColumnsKeep, list):
+            self.namedColumnsKeep = namedColumnsKeep
+        else:
+            self.namedColumnsKeep = [namedColumnsKeep]
 
+    def fit(self, Xall, y=None):
+
+        if self.namedColumnsKeep and not isinstance(Xall, pd.DataFrame):
+            raise Exception('To keep named columns data input needs to be a DataFrame')
+
+        # get mask of features that we are going to keep irrespective of correlations
+        keepMask = np.zeros(Xall.shape[1], dtype=bool)  # this will be the mask if X is an array (gives same behaviour as before I added DataFrame handling)
+        if self.namedColumnsKeep:
+            # X will be a DataFrame
+            for namedColumn in self.namedColumnsKeep:
+                keepMask[list(Xall.columns).index(namedColumn)] = True
+
+        # extract features we will apply selection to into an array
+        if isinstance(Xall, pd.DataFrame):
+            X = np.array(Xall.loc[:, np.logical_not(keepMask)])
+
+        # feature selection should not remove any features
         if self.threshold==1 or X.shape[1]==1:
             self.maxCorrelation_ = np.ones(X.shape[1])
             return self
+
 
         # make sure no zero-variance columns
         colInd = np.nonzero(np.var(X, axis=0)>0)[0]
@@ -89,15 +111,60 @@ class featureSelect_correlation(BaseEstimator, SelectorMixin):
             xCorr = xCorr + xCorr.T
             colInd = np.delete(colInd, deletecol)
 
-        # get maximum correlation for each column
-        # set this to 1 for any features that are already above self.threshold
-        # so that they won't get selected by _get_support_mask()
-        self.maxCorrelation_ = np.ones(X.shape[1])
-        self.maxCorrelation_[colInd] = np.max(xCorr, axis=0)
+        # mask has same columns as X (which doesn't include the features we will keep), but output mask needs to relate to Xall (which has all features)
+        mask = np.zeros(X.shape[1], dtype=bool)
+        mask[colInd] = True
 
+
+        keepMask[np.logical_not(keepMask)] = mask
+        self.mask_ = keepMask
 
         return self
 
     def _get_support_mask(self):
-        check_is_fitted(self, 'maxCorrelation_')
-        return self.maxCorrelation_ <= self.threshold
+        check_is_fitted(self, 'mask_')
+        return self.mask_
+
+    # copied from '/Users/morton/anaconda3/lib/python3.6/site-packages/sklearn/feature_selection/_base.py'
+    # changed output to make sure DataFrame output if DataFrame input
+    def fit_transform(self, X, y=None, **fit_params):
+        """
+        Fit to data, then transform it.
+
+        Fits transformer to X and y with optional parameters fit_params
+        and returns a transformed version of X.
+
+        Parameters
+        ----------
+        X : {array-like, sparse matrix, dataframe} of shape \
+                (n_samples, n_features)
+
+        y : ndarray of shape (n_samples,), default=None
+            Target values.
+
+        **fit_params : dict
+            Additional fit parameters.
+
+        Returns
+        -------
+        X_new : ndarray array of shape (n_samples, n_features_new)
+            Transformed array.
+        """
+        # non-optimized default implementation; override when a better
+        # method is possible for a given clustering algorithm
+        if isinstance(X, pd.DataFrame):
+            if y is None:
+                # fit method of arity 1 (unsupervised transformation)
+                self.fit(X, **fit_params)
+            else:
+                # fit method of arity 2 (supervised transformation)
+                self.fit(X, y, **fit_params)
+            return X.loc[:,self.mask_]
+        else:
+            if y is None:
+                # fit method of arity 1 (unsupervised transformation)
+                return self.fit(X, **fit_params).transform(X)
+            else:
+                # fit method of arity 2 (supervised transformation)
+                return self.fit(X, y, **fit_params).transform(X)
+
