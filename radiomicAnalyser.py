@@ -133,7 +133,7 @@ class radiomicAnalyser:
         if 'firstorder' in extractor.enabledFeatures:
             pixels = self.imageData['imageVolume'][self.mask == 1]
             # pyradiomics already computes the 10th, 50th and 90th centiles, so skip these here
-            qs = np.hstack((0.05, np.linspace(0.15, 0.45, 6), np.linspace(0.55, 0.85, 6), 0.95))
+            qs = np.hstack((0.05, np.linspace(0.15, 0.45, 7), np.linspace(0.55, 0.85, 7), 0.95))
             for q in qs:
                 featureVector['original_histogram_' + str((q * 100).round().astype(int)) + 'Percentile'] = np.quantile(pixels, q)
 
@@ -1274,9 +1274,20 @@ class radiomicAnalyser:
                 ax.spines['left'].set_visible(False)
                 ax.spines['right'].set_visible(False)
 
+        titleStr = os.path.split(self.assessorFileName)[1].split('.')[0]
 
-        titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
+        # titleStr = os.path.split(self.assessorFileName)[1].replace('__II__', '  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
+        # titleStr = '\033[1m\033[4m' + titleStr.replace('__II__', '\033[0m\033[0m  ', 1) + '\033[1m\033[4m  ' + self.roiObjectLabelFound + '\033[0m\033[0m'
+
+        titleStr = os.path.split(self.assessorFileName)[1].split('.')[0]
         titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
+        titleStr = titleStr.split('__II__')
+        titleStr = r'$\bf{' + titleStr[0].replace('_', '\_') + '}$  ' + '  '.join(titleStr[1:])
+        titleStr = titleStr + '  ' + r'$\bf{' + self.roiObjectLabelFound.replace('_','\_') + '}$'
+        #    os.path.split(self.assessorFileName)[1].replace('__II__', '}$  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
+
+        #titleStr = r'$\bf{' + titleStr.replace('__II__', '  ', 1) + '  ' + r'$\bf{' + self.roiObjectLabelFound.replace('_','\_') + '}$'
+
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize)
 
         fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
