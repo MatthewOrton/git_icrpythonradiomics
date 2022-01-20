@@ -76,13 +76,13 @@ class xnatDownloader:
 
 
     ##########################
-    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list()):
+    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list(), destinFolder=None):
         # Get list of all subjects in project.
         if subjectList is None:
             subjectList = self.getSubjectList_Project()
         subjectList = list(set(subjectList) - set(subjectListIgnore))
         subjectList.sort()
-        self.subjectList_downloadAssessors(subjectList)
+        self.subjectList_downloadAssessors(subjectList, destinFolder=destinFolder)
 
 
     ##########################
@@ -187,7 +187,7 @@ class xnatDownloader:
 
 
     ##########################
-    def subjectList_downloadAssessors(self, subjectList):
+    def subjectList_downloadAssessors(self, subjectList, destinFolder=None):
 
         # For all listed subjects, download all scans from associated experiments
         # Folder structure is: experiment>scan>image, but the experiment folder name has the subject label prepended.
@@ -200,7 +200,7 @@ class xnatDownloader:
                     if subject in self.xnat_session.projects[self.projectStr].subjects.keys():
                         for xnat_experiment in self.xnat_session.projects[self.projectStr].subjects[subject].experiments.values():
                             print('   ' + xnat_experiment.label)
-                            self.__downloadAndMoveAssessors(xnat_experiment)
+                            self.__downloadAndMoveAssessors(xnat_experiment, destinFolder=destinFolder)
                     else:
                         print('Subject not found!')
                     print(' ')
@@ -392,7 +392,7 @@ class xnatDownloader:
 
 
     ##########################
-    def __downloadAndMoveAssessors(self, xnat_experiment, segmentLabel=None):
+    def __downloadAndMoveAssessors(self, xnat_experiment, segmentLabel=None, destinFolder='assessors'):
 
         if len(xnat_experiment.assessors) > 0:
             scanDict = {}
@@ -433,15 +433,15 @@ class xnatDownloader:
                 references = self.__getReferencedUIDsAndLabels(thisFile[0])
                 scanID = scanDict[references["referencedSeriesUID"]].id
                 # move assessor file and rename it
-                if not os.path.exists(os.path.join(self.downloadPath, 'assessors')):
-                    os.mkdir(os.path.join(self.downloadPath, 'assessors'))
-                assessorFileName = os.path.join(self.downloadPath, 'assessors', myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
+                if not os.path.exists(os.path.join(self.downloadPath, destinFolder)):
+                    os.mkdir(os.path.join(self.downloadPath, destinFolder))
+                assessorFileName = os.path.join(self.downloadPath, destinFolder, myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
                 # check if file already downloaded, and also check the assessor has the same UID
                 # if the UID is the same then don't copy into destination folder
                 # if UID is different then move new assessor into special folder
                 if os.path.exists(assessorFileName):
-                    refOld = self. __getReferencedUIDsAndLabels(assessorFileName)
-                    refNew = self. __getReferencedUIDsAndLabels(thisFile[0])
+                    refOld = self.__getReferencedUIDsAndLabels(assessorFileName)
+                    refNew = self.__getReferencedUIDsAndLabels(thisFile[0])
                     if refOld["annotationUID"] == refNew["annotationUID"]:
                         print('      Assessor already downloaded')
                         os.remove(thisFile[0])
@@ -508,9 +508,17 @@ class xnatDownloader:
                     annotationObjectList.append(
                         {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
                          "label": label})
+
+            # have had dicom seg files with no sopInstanceUID, so catch this rather than crash!
+            if hasattr(dcm, 'SOPInstanceUID'):
+                sopInstUid = dcm.SOPInstanceUID
+            else:
+                sopInstUid = 'SopInstanceUID not found!'
+
             return {"referencedSeriesUID":rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID,
                     "referencedSopInstances":annotationObjectList,
-                    "roiCollectionLabel": dcm.StructureSetLabel}
+                    "roiCollectionLabel": dcm.StructureSetLabel,
+                    "annotationUID": sopInstUid}
 
         elif dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
             # Segmentation Storage
@@ -534,8 +542,8 @@ class xnatDownloader:
                      "label": label})
 
             # have had dicom seg files with no sopInstanceUID, so catch this rather than crash!
-            if hasattr(dcm,'SopInstanceUID'):
-                sopInstUid = dcm.SopInstanceUID
+            if hasattr(dcm,'SOPInstanceUID'):
+                sopInstUid = dcm.SOPInstanceUID
             else:
                 sopInstUid = 'SopInstanceUID not found!'
 
