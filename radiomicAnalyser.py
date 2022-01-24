@@ -1203,7 +1203,7 @@ class radiomicAnalyser:
                 #imDisp[0:nxx, 0:nyy] = vmin
                 ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
                 # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
-                ax.text(0.02, 0.98, str(self.imageData["imageInstanceNumber"][n]), color='c', fontsize=3, transform=ax.transAxes, ha='left', va='top')
+                ax.text(0, 1, str(self.imageData["imageInstanceNumber"][n]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
                 if showContours:
                     contours = self.contours[n]
                     dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
@@ -1282,13 +1282,12 @@ class radiomicAnalyser:
         titleStr = os.path.split(self.assessorFileName)[1].split('.')[0]
         titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
         titleStr = titleStr.split('__II__')
-        titleStr = r'$\bf{' + titleStr[0].replace('_', '\_') + '}$  ' + '  '.join(titleStr[1:])
-        titleStr = titleStr + '  ' + r'$\bf{' + self.roiObjectLabelFound.replace('_','\_') + '}$'
+        titleStr = r'$\bf{' + titleStr[0].replace('_', '\_') + '}$   ' + r'$\bf{' + self.roiObjectLabelFound.replace('_', '\_') + '}$  ' + '  '.join(titleStr[1:])
         #    os.path.split(self.assessorFileName)[1].replace('__II__', '}$  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
 
         #titleStr = r'$\bf{' + titleStr.replace('__II__', '  ', 1) + '  ' + r'$\bf{' + self.roiObjectLabelFound.replace('_','\_') + '}$'
 
-        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize)
+        plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize, x = 0.05, horizontalalignment='left')
 
         fullPath = os.path.join(self.outputPath, pathStr, 'subjects')
         if not os.path.exists(fullPath):
