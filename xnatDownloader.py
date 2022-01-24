@@ -76,7 +76,7 @@ class xnatDownloader:
 
 
     ##########################
-    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list(), destinFolder=None):
+    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list(), destinFolder='assessors'):
         # Get list of all subjects in project.
         if subjectList is None:
             subjectList = self.getSubjectList_Project()
@@ -187,7 +187,7 @@ class xnatDownloader:
 
 
     ##########################
-    def subjectList_downloadAssessors(self, subjectList, destinFolder=None):
+    def subjectList_downloadAssessors(self, subjectList, destinFolder='assessors'):
 
         # For all listed subjects, download all scans from associated experiments
         # Folder structure is: experiment>scan>image, but the experiment folder name has the subject label prepended.
