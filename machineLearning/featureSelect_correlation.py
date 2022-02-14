@@ -1,7 +1,7 @@
 from scipy.stats import spearmanr
 import numpy as np
 from sklearn.base import BaseEstimator
-from sklearn.feature_selection.base import SelectorMixin
+from sklearn.feature_selection import SelectorMixin
 from sklearn.utils.validation import check_is_fitted
 import pandas as pd
 
@@ -63,8 +63,8 @@ class featureSelect_correlation(BaseEstimator, SelectorMixin):
             for featureGroup in self.featureGroupHierarchy:
                 thisFeatureGroup = np.logical_and(featuresAtRisk, X.columns.str.contains(featureGroup))
                 featuresAtRisk[thisFeatureGroup] = False
-                print(featureGroup + ' : ' + str(np.sum(np.logical_not(discardMask[thisFeatureGroup]))) + '/' + str(np.sum(thisFeatureGroup)))
-            print('remainder' + ' : ' + str(np.sum(np.logical_not(discardMask[featuresAtRisk]))) + '/' + str(np.sum(featuresAtRisk)))
+                #print(featureGroup + ' : ' + str(np.sum(np.logical_not(discardMask[thisFeatureGroup]))) + '/' + str(np.sum(thisFeatureGroup)))
+            #print('remainder' + ' : ' + str(np.sum(np.logical_not(discardMask[featuresAtRisk]))) + '/' + str(np.sum(featuresAtRisk)))
 
         else:
             keepMask[np.logical_not(keepMask)] = self.getNonCorrelatedMask_(X)
@@ -135,7 +135,11 @@ class featureSelect_correlation(BaseEstimator, SelectorMixin):
         colInd = np.nonzero(np.var(X, axis=0)>0)[0]
 
         # compute correlation matrix
-        xCorr = np.abs(spearmanr(X[:,colInd]).correlation)
+        if X.shape[1]==2:
+            xc = np.abs(spearmanr(X[:,colInd]).correlation)
+            xCorr = np.array([[1, xc],[xc, 1]])
+        else:
+            xCorr = np.abs(spearmanr(X[:,colInd]).correlation)
 
         if self.exact:
 
