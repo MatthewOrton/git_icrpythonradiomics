@@ -8,7 +8,7 @@ from sklearn.utils.validation import check_is_fitted
 from sklearn.utils import check_array, safe_mask
 
 
-class featureSelect_groupName(BaseEstimator, SelectorMixin):
+class featureSelection_groupName(BaseEstimator, SelectorMixin):
 
     def __init__(self, groupFilter=''):
         self.groupFilter = groupFilter
@@ -48,7 +48,7 @@ class featureSelect_groupName(BaseEstimator, SelectorMixin):
         return X[:, safe_mask(X, mask)]
 
 
-class featureSelect_correlation(BaseEstimator, SelectorMixin):
+class featureSelection_correlation(BaseEstimator, SelectorMixin):
 
     def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False, namedColumnsKeep=[], featureGroupHierarchy=[]):
         self.threshold = threshold
