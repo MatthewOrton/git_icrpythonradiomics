@@ -10,6 +10,7 @@ from itertools import compress
 from re import compile
 import pathlib
 import time
+import csv
 
 def myStrJoin(strList):
     return '__II__'.join(strList)
@@ -27,7 +28,8 @@ class xnatDownloader:
                  assessorStyle='',
                  removeSecondaryAndSnapshots=False,
                  roiCollectionLabelFilter='',
-                 roiLabelFilter=None):
+                 roiLabelFilter=None,
+                 deleteExisting=False):
 
         self.serverURL = serverURL
         self.projectStr = projectStr
@@ -57,12 +59,32 @@ class xnatDownloader:
         print('Folder for downloads = ' + self.downloadPath + '\n')
 
         if os.path.exists(self.downloadPath):
-            blitz = input("Download folder exists.  Delete contents? : ")
-            if blitz == 'y':
+            if deleteExisting:
                 rmtree(self.downloadPath)
                 pathlib.Path(self.downloadPath).mkdir(parents=True)
         else:
             pathlib.Path(self.downloadPath).mkdir(parents=True)
+
+    ##########################
+    def getProjectDigest(self):
+        file = open(os.path.join(self.downloadPath, 'ProjectScanInfo_' + self.projectStr + '.csv'), 'a')
+        cw = csv.writer(file, delimiter=',')
+        cw.writerow(['Subject','Experiment','Scan ID','Scan Description','File count'])
+
+        subjectList = self.getSubjectList_Project()
+        for subject in subjectList:
+            experimentList = self.getExperimentList_Subject(subject)
+            for experiment in experimentList:
+                scanList = self.getScanList_Experiment(experiment)
+                for scan in scanList:
+                    if scan['fileCount']>0:
+                        scanStrList = [subject, experiment, scan['id'], scan['description'], str(scan['fileCount'])]
+                        print(', '.join(scanStrList))
+                        cw.writerow(scanStrList)
+            print('\n')
+            cw.writerow('\n')
+        file.close()
+
 
 
     ##########################
@@ -158,6 +180,19 @@ class xnatDownloader:
                 experimentList.append(xnat_experiment.label)
         return experimentList
 
+
+    ##########################
+    def getScanList_Experiment(self, experiment):
+        scanList = []
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            xnat_scans = xnat_session.projects[self.projectStr].experiments[experiment].scans
+            for xnat_scan in xnat_scans.values():
+                if xnat_scan.series_description is None:
+                    series_description = ''
+                else:
+                    series_description = xnat_scan.type #series_description
+                scanList.append({'id':xnat_scan.id, 'description':series_description, 'fileCount':xnat_scan.frames})
+        return scanList
 
     ##########################
     def getExperimentList_Subject(self, subject):
