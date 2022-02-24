@@ -44,7 +44,7 @@ class featureSelection_groupName(BaseEstimator, SelectorMixin):
             # return random noise if no features selected
             return np.random.normal(0, 1, (X.shape[0], 1))
         if len(mask) != X.shape[1]:
-            raise ValueError("X has a different shape than during fitting.")
+            raise ValueError("X has a different shape than during fitting: X #cols = " + str(X.shape[1]) + ' mask #cols = ' + str(len(mask)))
         return X[:, safe_mask(X, mask)]
 
 
