@@ -1201,9 +1201,11 @@ class radiomicAnalyser:
 
         tic = time.perf_counter()
         with progressbar.ProgressBar(max_value=(nPlt)) as bar:
-            for n in range(nPlt):
+            for n, ax in enumerate(fPlt.axes):
+
+            # for n in range(nPlt):
                 bar.update(n)
-                ax = plt.subplot(pltRows, pltCols, n+1)
+                # ax = plt.subplot(pltRows, pltCols, n+1)
                 if n<(nPlt-2):
                     imDisp = imArr[n,:,:]
                     #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
