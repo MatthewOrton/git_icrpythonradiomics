@@ -1195,7 +1195,7 @@ class radiomicAnalyser:
         out = {"axisLimits": {"minX": minX, "maxX": maxX, "minY": minY, "maxY": maxY}}
 
         plt.clf()
-        #fPlt = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
+        fPlt = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         import time
 
