@@ -21,6 +21,7 @@ from scipy.stats import norm
 import inspect
 import nrrd
 import uuid
+import progressbar
 
 # add folder to path for radiomicsFeatureExtractorEnhanced and the mixture model module
 import sys
@@ -1157,8 +1158,6 @@ class radiomicAnalyser:
         nPlt = 2 + maskArr.shape[0] # extra for a histogram
         pltRows = int(np.round(np.sqrt(2*nPlt/3)))
         pltCols = int(np.ceil(nPlt/pltRows))
-        plt.clf()
-        fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
         if np.sum(maskArr)==0:
             minX = 0
@@ -1194,11 +1193,17 @@ class radiomicAnalyser:
 
         # get current axis limits and include in the variable we will output from the function
         out = {"axisLimits": {"minX": minX, "maxX": maxX, "minY": minY, "maxY": maxY}}
-        import progressbar
 
-        with progressbar.ProgressBar(max_value=len(fPlt.axes)) as bar:
-            for n, ax in enumerate(fPlt.axes):
+        plt.clf()
+        #fPlt = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
+
+        import time
+
+        tic = time.perf_counter()
+        with progressbar.ProgressBar(max_value=(nPlt)) as bar:
+            for n in range(nPlt):
                 bar.update(n)
+                ax = plt.subplot(pltRows, pltCols, n+1)
                 if n<(nPlt-2):
                     imDisp = imArr[n,:,:]
                     #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
@@ -1207,6 +1212,7 @@ class radiomicAnalyser:
                     ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
                     # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
                     ax.text(0, 1, str(self.imageData["imageInstanceNumber"][n]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
+                    holeColor = 'c'
                     if showContours:
                         contours = self.contours[n]
                         dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
@@ -1221,33 +1227,35 @@ class radiomicAnalyser:
                             for contourDelete in contoursDelete:
                                 xPlot = [x+dx for x in contourDelete["x"]] + [contourDelete['x'][0]+dx]
                                 yPlot = [y+dy for y in contourDelete["y"]] + [contourDelete['y'][0]+dy]
-                                ax.plot(xPlot, yPlot, 'r', linewidth=linewidth)
+                                ax.plot(xPlot, yPlot, holeColor, linewidth=linewidth)
                     maskHere = maskArr[n,:,:]
                     if showMaskBoundary:
-                        idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
-                        ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
-                        ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
-                        ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
-                        ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+
+                        if np.any(maskHere>0):
+                            # tricks to get the boundary of the outside of the mask pixels using contour()
+                            ff = 5
+                            res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
+                            cc = plt.contour(res, levels=[0.5])
+                            for pp in cc.allsegs[0]:
+                                pp = (pp - (ff - 1)/2)/ff
+                                pp = np.round(pp - 0.5) + 0.5
+                                ax.plot(pp[:,0], pp[:,1], 'r', linewidth=linewidth)
+                            del cc
+
                         # overplot holes if there are present
                         if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
-                            holeColor = 'c'
                             maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
-                            idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
-                            ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
-                                    linewidth=linewidth)
-                            idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
-                            ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
-                                    linewidth=linewidth)
-                            idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
-                            ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
-                                    linewidth=linewidth)
-                            idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
-                            ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
-                                    linewidth=linewidth)
+                            if np.any(maskHere>0):
+                                # tricks to get the boundary of the outside of the mask pixels using contour()
+                                ff = 5
+                                res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
+                                cc = plt.contour(res, levels=[0.5])
+                                for pp in cc.allsegs[0]:
+                                    pp = (pp - (ff - 1) / 2) / ff
+                                    pp = np.round(pp - 0.5) + 0.5
+                                    ax.plot(pp[:, 0], pp[:, 1], 'g', linewidth=linewidth)
+                                del cc
+
                     ax.xaxis.set_visible(False)
                     ax.yaxis.set_visible(False)
                     ax.set_xlim(minX, maxX)
