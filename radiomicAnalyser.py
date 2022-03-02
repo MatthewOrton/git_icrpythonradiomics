@@ -1194,71 +1194,81 @@ class radiomicAnalyser:
 
         # get current axis limits and include in the variable we will output from the function
         out = {"axisLimits": {"minX": minX, "maxX": maxX, "minY": minY, "maxY": maxY}}
+        import progressbar
 
-        for n, ax in enumerate(fPlt.axes):
-            if n<(nPlt-2):
-                imDisp = imArr[n,:,:]
-                #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
-                #nyy = np.round(minY+0.2*(maxY-minY)).astype(int)
-                #imDisp[0:nxx, 0:nyy] = vmin
-                ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
-                # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
-                ax.text(0, 1, str(self.imageData["imageInstanceNumber"][n]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
-                if showContours:
-                    contours = self.contours[n]
-                    dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
-                    dy = self.roiShift[1]
-                    for contour in contours:
-                        # make sure will be closed
-                        xPlot = [x+dx for x in contour["x"]]+[contour['x'][0]+dx]
-                        yPlot = [y+dy for y in contour["y"]]+[contour['y'][0]+dy]
-                        ax.plot(xPlot, yPlot, 'b', linewidth=linewidth)
-                    if hasattr(self,'contoursDelete'):
-                        contoursDelete = self.contoursDelete[n]
-                        for contourDelete in contoursDelete:
-                            xPlot = [x+dx for x in contourDelete["x"]] + [contourDelete['x'][0]+dx]
-                            yPlot = [y+dy for y in contourDelete["y"]] + [contourDelete['y'][0]+dy]
-                            ax.plot(xPlot, yPlot, 'r', linewidth=linewidth)
-                maskHere = maskArr[n,:,:]
-                if showMaskBoundary:
-                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
-                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
-                    ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
-                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                    idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
-                    ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
-                    # overplot holes if there are present
-                    if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
-                        holeColor = 'c'
-                        maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
-                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
-                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
-                                linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
-                        ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
-                                linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
-                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
-                                linewidth=linewidth)
-                        idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
-                        ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
-                                linewidth=linewidth)
-                ax.xaxis.set_visible(False)
-                ax.yaxis.set_visible(False)
-                ax.set_xlim(minX, maxX)
-                ax.set_ylim(maxY, minY) # to flip y-axis
-            elif n==(pltRows*pltCols-1):
-                if showHistogram and np.sum(maskArr)>0:
-                    if bins is None:
-                        binParams = self.__getBinParameters()
-                        if 'binWidth' in binParams:
-                            bins = np.arange(vmin, vmax, binParams['binWidth'])
-                        elif 'binCount' in binParams:
-                            bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
-                    ax.hist(yRef, bins, density=True, histtype='stepfilled')
-                    ax.set_xlim([bins[0], bins[-1]])
+        with progressbar.ProgressBar(max_value=len(fPlt.axes)) as bar:
+            for n, ax in enumerate(fPlt.axes):
+                bar.update(n)
+                if n<(nPlt-2):
+                    imDisp = imArr[n,:,:]
+                    #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
+                    #nyy = np.round(minY+0.2*(maxY-minY)).astype(int)
+                    #imDisp[0:nxx, 0:nyy] = vmin
+                    ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
+                    # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
+                    ax.text(0, 1, str(self.imageData["imageInstanceNumber"][n]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
+                    if showContours:
+                        contours = self.contours[n]
+                        dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
+                        dy = self.roiShift[1]
+                        for contour in contours:
+                            # make sure will be closed
+                            xPlot = [x+dx for x in contour["x"]]+[contour['x'][0]+dx]
+                            yPlot = [y+dy for y in contour["y"]]+[contour['y'][0]+dy]
+                            ax.plot(xPlot, yPlot, 'b', linewidth=linewidth)
+                        if hasattr(self,'contoursDelete'):
+                            contoursDelete = self.contoursDelete[n]
+                            for contourDelete in contoursDelete:
+                                xPlot = [x+dx for x in contourDelete["x"]] + [contourDelete['x'][0]+dx]
+                                yPlot = [y+dy for y in contourDelete["y"]] + [contourDelete['y'][0]+dy]
+                                ax.plot(xPlot, yPlot, 'r', linewidth=linewidth)
+                    maskHere = maskArr[n,:,:]
+                    if showMaskBoundary:
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1]==0.0, maskHere[:, 1:]==1.0))
+                        ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[:, 0:-1]==1.0, maskHere[:, 1:]==0.0))
+                        ax.plot(np.asarray((idx[1]+0.5, idx[1]+0.5)), np.asarray((idx[0]-0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1,:]==0.0, maskHere[1:,:]==1.0))
+                        ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                        idx = np.where(np.logical_and(maskHere[0:-1,:]==1.0, maskHere[1:,:]==0.0))
+                        ax.plot(np.asarray((idx[1]-0.5, idx[1]+0.5)), np.asarray((idx[0]+0.5,idx[0]+0.5)), 'r', linewidth=linewidth)
+                        # overplot holes if there are present
+                        if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
+                            holeColor = 'c'
+                            maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
+                            idx = np.where(np.logical_and(maskHere[:, 0:-1] == 0.0, maskHere[:, 1:] == 1.0))
+                            ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
+                                    linewidth=linewidth)
+                            idx = np.where(np.logical_and(maskHere[:, 0:-1] == 1.0, maskHere[:, 1:] == 0.0))
+                            ax.plot(np.asarray((idx[1] + 0.5, idx[1] + 0.5)), np.asarray((idx[0] - 0.5, idx[0] + 0.5)), holeColor,
+                                    linewidth=linewidth)
+                            idx = np.where(np.logical_and(maskHere[0:-1, :] == 0.0, maskHere[1:, :] == 1.0))
+                            ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
+                                    linewidth=linewidth)
+                            idx = np.where(np.logical_and(maskHere[0:-1, :] == 1.0, maskHere[1:, :] == 0.0))
+                            ax.plot(np.asarray((idx[1] - 0.5, idx[1] + 0.5)), np.asarray((idx[0] + 0.5, idx[0] + 0.5)), holeColor,
+                                    linewidth=linewidth)
+                    ax.xaxis.set_visible(False)
+                    ax.yaxis.set_visible(False)
+                    ax.set_xlim(minX, maxX)
+                    ax.set_ylim(maxY, minY) # to flip y-axis
+                elif n==(pltRows*pltCols-1):
+                    if showHistogram and np.sum(maskArr)>0:
+                        if bins is None:
+                            binParams = self.__getBinParameters()
+                            if 'binWidth' in binParams:
+                                bins = np.arange(vmin, vmax, binParams['binWidth'])
+                            elif 'binCount' in binParams:
+                                bins = np.linspace(min(yRef), max(yRef), num=binParams['binCount']).squeeze()
+                        ax.hist(yRef, bins, density=True, histtype='stepfilled')
+                        ax.set_xlim([bins[0], bins[-1]])
+                    else:
+                        ax.xaxis.set_visible(False)
+                        ax.yaxis.set_visible(False)
+                        ax.spines['top'].set_visible(False)
+                        ax.spines['bottom'].set_visible(False)
+                        ax.spines['left'].set_visible(False)
+                        ax.spines['right'].set_visible(False)
                 else:
                     ax.xaxis.set_visible(False)
                     ax.yaxis.set_visible(False)
@@ -1266,13 +1276,6 @@ class radiomicAnalyser:
                     ax.spines['bottom'].set_visible(False)
                     ax.spines['left'].set_visible(False)
                     ax.spines['right'].set_visible(False)
-            else:
-                ax.xaxis.set_visible(False)
-                ax.yaxis.set_visible(False)
-                ax.spines['top'].set_visible(False)
-                ax.spines['bottom'].set_visible(False)
-                ax.spines['left'].set_visible(False)
-                ax.spines['right'].set_visible(False)
 
         titleStr = os.path.split(self.assessorFileName)[1].split('.')[0]
 
