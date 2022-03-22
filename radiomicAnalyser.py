@@ -1195,12 +1195,9 @@ class radiomicAnalyser:
         out = {"axisLimits": {"minX": minX, "maxX": maxX, "minY": minY, "maxY": maxY}}
 
         plt.clf()
-        fPlt = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
+        fPlt, axarr = plt.subplots(pltRows, pltCols, gridspec_kw={'wspace':0, 'hspace':0})
 
-        import time
-
-        tic = time.perf_counter()
-        with progressbar.ProgressBar(max_value=(nPlt)) as bar:
+        with progressbar.ProgressBar(max_value=len(fPlt.axes)) as bar:
             for n, ax in enumerate(fPlt.axes):
 
             # for n in range(nPlt):
@@ -1220,16 +1217,29 @@ class radiomicAnalyser:
                         dx = self.roiShift[0]   # xnatCollaborations viewer has a bug that results in a 1 pixel shift, so roiShift = [-1, -1] will fix thiscan input
                         dy = self.roiShift[1]
                         for contour in contours:
-                            # make sure will be closed
+                            # make sure will be closed, and apply offset
                             xPlot = [x+dx for x in contour["x"]]+[contour['x'][0]+dx]
                             yPlot = [y+dy for y in contour["y"]]+[contour['y'][0]+dy]
-                            ax.plot(xPlot, yPlot, 'b', linewidth=linewidth)
+                            # Outrageously, there seems to be a bug in the plot function that means sometimes the line does not go through the points!!!
+                            # It seems to be worse if there are more points, and by separating the plotting into stretches of 50 points seems to fix it.
+                            ff = 50
+                            for nn in range(np.ceil(len(xPlot)/ff).astype(int)):
+                                if (ff*(nn+1)+1)<len(xPlot):
+                                    ax.plot(xPlot[ff*nn:ff*(nn+1)+1], yPlot[ff*nn:ff*(nn+1)+1], linewidth=linewidth, color='b')
+                            ax.plot(xPlot[ff*nn:], yPlot[ff*nn:], linewidth=linewidth, color='b')
                         if hasattr(self,'contoursDelete'):
                             contoursDelete = self.contoursDelete[n]
                             for contourDelete in contoursDelete:
+                                # close and offset contour
                                 xPlot = [x+dx for x in contourDelete["x"]] + [contourDelete['x'][0]+dx]
                                 yPlot = [y+dy for y in contourDelete["y"]] + [contourDelete['y'][0]+dy]
-                                ax.plot(xPlot, yPlot, holeColor, linewidth=linewidth)
+                                # Outrageously, there seems to be a bug in the plot function that means sometimes the line does not go through the points!!!
+                                # It seems to be worse if there are more points, and by separating the plotting into stretches of 50 points seems to fix it.
+                                ff = 50
+                                for nn in range(np.ceil(len(xPlot) / ff).astype(int)):
+                                    if (ff * (nn + 1) + 1) < len(xPlot):
+                                        ax.plot(xPlot[ff * nn:ff * (nn + 1) + 1], yPlot[ff * nn:ff * (nn + 1) + 1], linewidth=linewidth, color='r')
+                                ax.plot(xPlot[ff * nn:], yPlot[ff * nn:], linewidth=linewidth, color='r')
                     maskHere = maskArr[n,:,:]
                     if showMaskBoundary:
 
@@ -1237,7 +1247,7 @@ class radiomicAnalyser:
                             # tricks to get the boundary of the outside of the mask pixels using contour()
                             ff = 5
                             res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
-                            cc = plt.contour(res, levels=[0.5])
+                            cc = ax.contour(res, levels=[0.5])
                             for pp in cc.allsegs[0]:
                                 pp = (pp - (ff - 1)/2)/ff
                                 pp = np.round(pp - 0.5) + 0.5
@@ -1251,11 +1261,11 @@ class radiomicAnalyser:
                                 # tricks to get the boundary of the outside of the mask pixels using contour()
                                 ff = 5
                                 res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
-                                cc = plt.contour(res, levels=[0.5])
+                                cc = ax.contour(res, levels=[0.5])
                                 for pp in cc.allsegs[0]:
                                     pp = (pp - (ff - 1) / 2) / ff
                                     pp = np.round(pp - 0.5) + 0.5
-                                    ax.plot(pp[:, 0], pp[:, 1], 'g', linewidth=linewidth)
+                                    ax.plot(pp[:, 0], pp[:, 1], 'b', linewidth=linewidth)
                                 del cc
 
                     ax.xaxis.set_visible(False)
