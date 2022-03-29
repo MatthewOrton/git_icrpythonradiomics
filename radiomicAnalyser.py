@@ -737,7 +737,7 @@ class radiomicAnalyser:
         return np.dot(Vr, np.dot(x, np.transpose(Vc))) / (self.fineGrid * self.fineGrid)
 
     ##########################
-    def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False):
+    def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False, includeContiguousEmptySlices=True):
 
         # direct loading if specified
         if fileType == 'nii':
@@ -849,6 +849,24 @@ class radiomicAnalyser:
                 self.ModalitySpecificParameters[parameter] = getattr(dcm, parameter)
             else:
                 self.ModalitySpecificParameters[parameter] = ''
+
+        if includeContiguousEmptySlices:
+            if not hasattr(self, 'extraDictionaries'):
+                raise Exception('To include empty slices you need to input an instanceNumberDict')
+            else:
+                instanceDict = self.extraDictionaries['instanceNumDict']
+                sopInst2instanceNumberDict = self.extraDictionaries['sopInst2instanceNumberDict']
+            # find existing InstanceNumbers
+            instanceNumbers = list()
+            for refSopInstUID in refSopInstUIDs:
+                instanceNumbers.append(int(sopInst2instanceNumberDict[refSopInstUID]))
+            # find any missing instance numbers to make the list contiguous
+            allInstanceNumbers = list(range(min(instanceNumbers), max(instanceNumbers) + 1))
+            extraInstanceNumbers = list(set(allInstanceNumbers) - set(instanceNumbers))
+            # add SOPInstUIDs of extra slices
+            for extraInstanceNumber in extraInstanceNumbers:
+                extraSopInstance = instanceDict[extraInstanceNumber]['SOPInstanceUID']
+                refSopInstUIDs.append(extraSopInstance)
 
         if includeExtraTopAndBottomSlices:
             if not hasattr(self, 'extraDictionaries'):
