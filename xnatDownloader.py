@@ -11,6 +11,7 @@ from re import compile
 import pathlib
 import time
 import csv
+from time import strftime, localtime
 
 def myStrJoin(strList):
     return '__II__'.join(strList)
@@ -67,22 +68,30 @@ class xnatDownloader:
 
     ##########################
     def getProjectDigest(self):
-        file = open(os.path.join(self.downloadPath, 'ProjectScanInfo_' + self.projectStr + '.csv'), 'a')
+        file = open(os.path.join(self.downloadPath, 'ProjectScanInfo_' + self.projectStr + '_' + strftime("%Y.%m.%d_%H.%M.%S", localtime()) + '.csv'), 'a')
         cw = csv.writer(file, delimiter=',')
         cw.writerow(['Subject','Experiment','Scan ID','Scan Description','File count'])
 
         subjectList = self.getSubjectList_Project()
-        for subject in subjectList:
+        print('Found ' + str(len(subjectList)) + ' Subjects\n')
+        for n, subject in enumerate(subjectList):
+            print(str(n) + ' ' + subject + ' / ', end='')
             experimentList = self.getExperimentList_Subject(subject)
+            if len(experimentList)==0:
+                print(' empty')
             for experiment in experimentList:
                 scanList = self.getScanList_Experiment(experiment)
+                if len(scanList)==0:
+                    print(experiment + ' / empty')
+                else:
+                    print(experiment)
                 for scan in scanList:
                     if scan['fileCount']>0:
-                        scanStrList = [subject, experiment, scan['id'], scan['description'], str(scan['fileCount'])]
+                        scanStrList = [str(n), subject, experiment, scan['id'], scan['description'], str(scan['fileCount'])]
                         print(', '.join(scanStrList))
                         cw.writerow(scanStrList)
             print('\n')
-            cw.writerow('\n')
+            cw.writerow([])
         file.close()
 
 
