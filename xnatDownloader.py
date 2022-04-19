@@ -30,7 +30,8 @@ class xnatDownloader:
                  removeSecondaryAndSnapshots=False,
                  roiCollectionLabelFilter='',
                  roiLabelFilter=None,
-                 deleteExisting=False):
+                 deleteExisting=False,
+                 assessorFolder='assessors'):
 
         self.serverURL = serverURL
         self.projectStr = projectStr
@@ -40,6 +41,7 @@ class xnatDownloader:
         self.roiCollectionLabelFilter = roiCollectionLabelFilter
         self.roiLabelFilter = roiLabelFilter
         self.xnat_session = None
+        self.assessorFolder = assessorFolder
 
         # check that project exists
         with xnat.connect(server=self.serverURL) as xnat_session:
@@ -107,7 +109,9 @@ class xnatDownloader:
 
 
     ##########################
-    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list(), destinFolder='assessors'):
+    def downloadAssessors_Project(self, subjectList=None, subjectListIgnore=list(), destinFolder=''):
+        if destinFolder!='':
+            self.assessorFolder = destinFolder
         # Get list of all subjects in project.
         if subjectList is None:
             subjectList = self.getSubjectList_Project()
@@ -231,7 +235,11 @@ class xnatDownloader:
 
 
     ##########################
-    def subjectList_downloadAssessors(self, subjectList, destinFolder='assessors'):
+    def subjectList_downloadAssessors(self, subjectList, destinFolder=''):
+
+        if destinFolder!='':
+            self.assessorFolder = destinFolder
+
 
         # For all listed subjects, download all scans from associated experiments
         # Folder structure is: experiment>scan>image, but the experiment folder name has the subject label prepended.
@@ -279,7 +287,7 @@ class xnatDownloader:
         # This method downloads the whole series referenced by the assessors then deletes any non-referenced images.
         # This is useful mainly to save HD space.
         # Files are named to indicate their contents, and are stored flat in the indicated download folder
-        assessorFiles = glob.glob(os.path.join(self.downloadPath, 'assessors', '*.*'))
+        assessorFiles = glob.glob(os.path.join(self.downloadPath, self.assessorFolder, '*.*'))
         assessorFiles.sort()
         if not keepEntireScan:
             refImageDownloadPath = os.path.join(self.downloadPath,'referencedImages')
@@ -397,9 +405,9 @@ class xnatDownloader:
     ##########################
     def downloadAssessorsNameExtFiltered(self, nameFilter, extFilter):
 
-        destinFolder = os.path.join(self.downloadPath, 'assessors')
+        destinFolder = os.path.join(self.downloadPath, self.assessorFolder)
         if not os.path.exists(destinFolder):
-            os.mkdir(destinFolder)
+            os.makedirs(destinFolder)
 
         subjectList = []
         with xnat.connect(server=self.serverURL) as xnat_session:
@@ -436,7 +444,11 @@ class xnatDownloader:
 
 
     ##########################
-    def __downloadAndMoveAssessors(self, xnat_experiment, segmentLabel=None, destinFolder='assessors'):
+    def __downloadAndMoveAssessors(self, xnat_experiment, segmentLabel=None, destinFolder=''):
+
+        if destinFolder!='':
+            self.assessorFolder = destinFolder
+
 
         if len(xnat_experiment.assessors) > 0:
             scanDict = {}
@@ -477,9 +489,9 @@ class xnatDownloader:
                 references = self.__getReferencedUIDsAndLabels(thisFile[0])
                 scanID = scanDict[references["referencedSeriesUID"]].id
                 # move assessor file and rename it
-                if not os.path.exists(os.path.join(self.downloadPath, destinFolder)):
-                    os.mkdir(os.path.join(self.downloadPath, destinFolder))
-                assessorFileName = os.path.join(self.downloadPath, destinFolder, myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
+                if not os.path.exists(os.path.join(self.downloadPath, self.assessorFolder)):
+                    os.makedirs(os.path.join(self.downloadPath, self.assessorFolder))
+                assessorFileName = os.path.join(self.downloadPath, self.assessorFolder, myStrJoin([xnat_experiment.subject.label, xnat_experiment.label, scanID, xnat_assessor.label]) + thisExt)
                 # check if file already downloaded, and also check the assessor has the same UID
                 # if the UID is the same then don't copy into destination folder
                 # if UID is different then move new assessor into special folder
