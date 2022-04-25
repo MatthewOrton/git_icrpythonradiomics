@@ -863,6 +863,8 @@ class radiomicAnalyser:
             # find any missing instance numbers to make the list contiguous
             allInstanceNumbers = list(range(min(instanceNumbers), max(instanceNumbers) + 1))
             extraInstanceNumbers = list(set(allInstanceNumbers) - set(instanceNumbers))
+            if len(extraInstanceNumbers)>0:
+                print('\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m' + str(len(extraInstanceNumbers)) + ' SLICES WITHOUT CONTOURS\033[0m\033[0m')
             # add SOPInstUIDs of extra slices
             for extraInstanceNumber in extraInstanceNumbers:
                 extraSopInstance = instanceDict[extraInstanceNumber]['SOPInstanceUID']
