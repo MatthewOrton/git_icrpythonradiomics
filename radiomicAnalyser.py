@@ -854,7 +854,7 @@ class radiomicAnalyser:
             if not hasattr(self, 'extraDictionaries'):
                 raise Exception('To include empty slices you need to input an instanceNumberDict')
             else:
-                instanceDict = self.extraDictionaries['instanceNumDict']
+                instanceDict = self.extraDictionaries['instanceNumDict'][self.ReferencedSeriesUID]
                 sopInst2instanceNumberDict = self.extraDictionaries['sopInst2instanceNumberDict']
             # find existing InstanceNumbers
             instanceNumbers = list()
@@ -872,7 +872,7 @@ class radiomicAnalyser:
             if not hasattr(self, 'extraDictionaries'):
                 raise Exception('To include extra top and bottom slices you need to input an instanceNumberDict')
             else:
-                instanceDict = self.extraDictionaries['instanceNumDict']
+                instanceDict = self.extraDictionaries['instanceNumDict'][self.ReferencedSeriesUID]
                 sopInst2instanceNumberDict = self.extraDictionaries['sopInst2instanceNumberDict']
             # find extra slices from the InstanceNumbers in the referenced SopInstances
             instanceNumbers = list()
