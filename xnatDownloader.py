@@ -69,13 +69,15 @@ class xnatDownloader:
             pathlib.Path(self.downloadPath).mkdir(parents=True)
 
     ##########################
-    def getProjectDigest(self):
+    def getProjectDigest(self, subjectList=None):
         file = open(os.path.join(self.downloadPath, 'ProjectScanInfo_' + self.projectStr + '_' + strftime("%Y.%m.%d_%H.%M.%S", localtime()) + '.csv'), 'a')
         cw = csv.writer(file, delimiter=',')
-        cw.writerow(['Subject','Experiment','Scan ID','Scan Description','File count'])
+        cw.writerow(['Counter', 'Subject','Experiment','Scan ID','Scan Description','File count'])
 
-        subjectList = self.getSubjectList_Project()
-        print('Found ' + str(len(subjectList)) + ' Subjects\n')
+        if subjectList is None:
+            subjectList = self.getSubjectList_Project()
+            print('Found ' + str(len(subjectList)) + ' Subjects\n')
+
         for n, subject in enumerate(subjectList):
             print(str(n) + ' ' + subject + ' / ', end='')
             experimentList = self.getExperimentList_Subject(subject)
@@ -85,13 +87,13 @@ class xnatDownloader:
                 scanList = self.getScanList_Experiment(experiment)
                 if len(scanList)==0:
                     print(experiment + ' / empty')
-                else:
-                    print(experiment)
                 for scan in scanList:
                     if scan['fileCount']>0:
                         scanStrList = [str(n), subject, experiment, scan['id'], scan['description'], str(scan['fileCount'])]
                         print(', '.join(scanStrList))
                         cw.writerow(scanStrList)
+                print('\n')
+                cw.writerow([])
             print('\n')
             cw.writerow([])
         file.close()
