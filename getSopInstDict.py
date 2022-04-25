@@ -10,7 +10,8 @@ def getSopInstDict(path):
 
     sopInstDict = {}
     sopInst2instanceNumberDict = {}
-    instanceNumberDict = {}
+    instanceNumberDict = {}             # initially this was just a dictionary with InstanceNumber as the keys, but this (obviously!) doesn't work if there are >1 series in path
+                                        # I have re-done so that instanceNumberDict is a dictionary of dictionaries - the outer dictionary has SeriesInstanceUID as keys, and the inner dictionary has InstanceNumber as the keys
     sopInstToSopClassUidDict = {}
 
     quickLoad = path + '_sopInstDict.pickle'
@@ -45,8 +46,13 @@ def getSopInstDict(path):
                             thisDict['AcquisitionNumber'] = int(-1)
                         if hasattr(dcm,'SliceLocation'):
                             thisDict['SliceLocation'] = dcm.SliceLocation
-                        if int(dcm.InstanceNumber) not in instanceNumberDict.keys():
-                            instanceNumberDict[thisInstanceNumber] = thisDict
+                        if dcm.SeriesInstanceUID in instanceNumberDict:
+                            if int(dcm.InstanceNumber) in instanceNumberDict[dcm.SeriesInstanceUID].keys():
+                                raise Exception('InstanceNumber already found in SeriesInstanceUID dictionary!')
+                            else:
+                                instanceNumberDict[dcm.SeriesInstanceUID][thisInstanceNumber] = thisDict
+                        else:
+                            instanceNumberDict[dcm.SeriesInstanceUID] = {thisInstanceNumber:thisDict}
                 bar.update(n)
         print('Complete')
         print(' ')
