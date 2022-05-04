@@ -72,7 +72,7 @@ class xnatDownloader:
     def getProjectDigest(self, subjectList=None):
         file = open(os.path.join(self.downloadPath, 'ProjectScanInfo_' + self.projectStr + '_' + strftime("%Y.%m.%d_%H.%M.%S", localtime()) + '.csv'), 'a')
         cw = csv.writer(file, delimiter=',')
-        cw.writerow(['Counter', 'Subject','Experiment','Scan ID','Scan Description','File count'])
+        cw.writerow(['Counter', 'Subject','Experiment','Scan date','Scan ID','Scan Description','File count'])
 
         if subjectList is None:
             subjectList = self.getSubjectList_Project()
@@ -89,7 +89,7 @@ class xnatDownloader:
                     print(experiment + ' / empty')
                 for scan in scanList:
                     if scan['fileCount']>0:
-                        scanStrList = [str(n), subject, experiment, scan['id'], scan['description'], str(scan['fileCount'])]
+                        scanStrList = [str(n), subject, experiment, scan['scanDate'], scan['id'], scan['description'], str(scan['fileCount'])]
                         print(', '.join(scanStrList))
                         cw.writerow(scanStrList)
                 print('\n')
@@ -161,7 +161,7 @@ class xnatDownloader:
     ##########################
     # Download listed scans.
     # Folder structure is: experiment>scan>image and is the same as for downloadSubjectList()
-    def scanList_downloadScans(self, scanList, scanFormat='ID'):
+    def scanList_downloadScans(self, scanList, scanFormat='ID', destinFolder=None):
         for scan in scanList:
             experimentID = scan[0]
             scanID = scan[1]
@@ -172,11 +172,17 @@ class xnatDownloader:
                         xnat_experiment = self.xnat_session.projects[self.projectStr].experiments[experimentID]
                         if scanFormat is 'ID':
                             if scanID in xnat_experiment.scans.data.keys():
-                                self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID)
+                                if destinFolder is None:
+                                    self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID)
+                                else:
+                                    self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID, destinFolder=destinFolder)
                         elif scanFormat is 'scanDescription':
                             for item in xnat_experiment.scans.data.items():
                                 if scanID == item[1].type:
-                                   self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0])
+                                    if destinFolder is None:
+                                        self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0])
+                                    else:
+                                        self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0], destinFolder=destinFolder)
                         else:
                             print('Scan not found!')
                     else:
@@ -201,12 +207,13 @@ class xnatDownloader:
         scanList = []
         with xnat.connect(server=self.serverURL) as xnat_session:
             xnat_scans = xnat_session.projects[self.projectStr].experiments[experiment].scans
+            experimentDate = xnat_session.projects[self.projectStr].experiments[experiment].data['date']
             for xnat_scan in xnat_scans.values():
                 if xnat_scan.series_description is None:
                     series_description = ''
                 else:
                     series_description = xnat_scan.type #series_description
-                scanList.append({'id':xnat_scan.id, 'description':series_description, 'fileCount':xnat_scan.frames})
+                scanList.append({'id':xnat_scan.id, 'description':series_description, 'fileCount':xnat_scan.frames, 'scanDate':experimentDate})
         return scanList
 
     ##########################
@@ -371,13 +378,14 @@ class xnatDownloader:
         thisFolder = list(set(afterContents) - set(beforeContents))
 
         if len(thisFolder)>1:
+            print(thisFolder)
             raise Exception("More than one folder downloaded!")
         if len(thisFolder)==0:
             raise Exception("Downloaded folder not found!")
 
         # move/rename experiment folder to include the subject label as well
         if not os.path.exists(os.path.join(self.downloadPath, destinFolder)):
-            os.mkdir(os.path.join(self.downloadPath, destinFolder))
+            os.makedirs(os.path.join(self.downloadPath, destinFolder))
         currentFolder = os.path.join(self.downloadPath, thisFolder[0])
         newFolder = os.path.join(self.downloadPath, destinFolder, myStrJoin([xnat_experiment.subject.label, xnat_experiment.label]))
         if os.path.exists(os.path.join(newFolder, 'scans')):
