@@ -63,7 +63,7 @@ class radiomicAnalyser:
         self.annotationUID = self.__getAnnotationUID()
 
         print(' ')
-        print('Processing : ' + self.assessorFileName)
+        print('\033[1mProcessing : ' + self.assessorFileName +'\033[0m')
 
     def getModuleFileLocation(self):
         return __file__
@@ -795,6 +795,8 @@ class radiomicAnalyser:
             return
 
         refUID = self.__getReferencedUIDs()
+        if hasattr(self, 'ReferencedSeriesUID'):
+            print('Referenced SeriesInstanceUID = ' + str(self.ReferencedSeriesUID))
 
         if len(refUID)==0:
             print('\033[1;31;48m    loadImageData(): No ROI objects matching label "' + self.roiObjectLabelFilter + '" found in assessor!\033[0;30;48m')
@@ -805,6 +807,7 @@ class radiomicAnalyser:
         imagePositionPatient = []
         imagePositionPatientNormal = [] # this is imagePositionPatient projected onto the image normal vector and is used to sort the slices
         imageInstanceNumber = []
+        imageAcquisitionNumber = []
 
         # get list of unique referencedSOPInstanceUIDs
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
@@ -856,15 +859,16 @@ class radiomicAnalyser:
             else:
                 instanceDict = self.extraDictionaries['instanceNumDict'][self.ReferencedSeriesUID]
                 sopInst2instanceNumberDict = self.extraDictionaries['sopInst2instanceNumberDict']
-            # find existing InstanceNumbers
+            # find existing InstanceNumbers and AcquisitionNumbers
             instanceNumbers = list()
+            acquisitionNumbers = list()
             for refSopInstUID in refSopInstUIDs:
                 instanceNumbers.append(int(sopInst2instanceNumberDict[refSopInstUID]))
             # find any missing instance numbers to make the list contiguous
             allInstanceNumbers = list(range(min(instanceNumbers), max(instanceNumbers) + 1))
             extraInstanceNumbers = list(set(allInstanceNumbers) - set(instanceNumbers))
             if len(extraInstanceNumbers)>0:
-                print('\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m' + str(len(extraInstanceNumbers)) + ' SLICES WITHOUT CONTOURS\033[0m\033[0m')
+                print('\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m Instance numbers without contours: ' + self.StudyPatientName + ': ' + str(extraInstanceNumbers) + '\033[0m\033[0m')
             # add SOPInstUIDs of extra slices
             for extraInstanceNumber in extraInstanceNumbers:
                 extraSopInstance = instanceDict[extraInstanceNumber]['SOPInstanceUID']
@@ -918,6 +922,10 @@ class radiomicAnalyser:
             imOri = np.array([float(x) for x in dcm.ImageOrientationPatient])
             imagePositionPatientNormal.append(np.dot(imPos, np.cross(imOri[0:3], imOri[3:])))
             imageInstanceNumber.append(dcm.InstanceNumber)
+            if hasattr(dcm, 'AcquisitionNumber'):
+                imageAcquisitionNumber.append(dcm.AcquisitionNumber)
+            else:
+                imageAcquisitionNumber.append(-1)
 
             # grab important parts of dicom
             sopInstUID.append(dcm.SOPInstanceUID)
@@ -930,6 +938,9 @@ class radiomicAnalyser:
             else:
                 RescaleIntercept = 0.0
             imSlice.append(RescaleSlope * dcm.pixel_array + RescaleIntercept)
+
+        if len(set(imageAcquisitionNumber))>1:
+            print('\033[1m\033[91mSEVERE WARNING!!  radiomicAnalyser.LoadImageData(): Referenced SOPInstances span more than one AcqusitionNumber!\033[0m\033[0m')
 
         imageData = {}
         # assuming these are the same for all referenced SOPInstances
@@ -1276,8 +1287,9 @@ class radiomicAnalyser:
 
                         # overplot holes if there are present
                         if (showMaskHolesWithNewColour and hasattr(self, 'maskDelete')):
-                            maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
-                            if np.any(maskHere>0):
+                            #maskHere = np.logical_and(self.maskOriginal[n, :, :].astype(bool), self.maskDelete[n, :, :].astype(bool)).astype(float)
+                            maskHere = np.logical_not(self.maskDelete[n, :, :].astype(bool)).astype(float)
+                            if np.any(maskHere<1):
                                 # tricks to get the boundary of the outside of the mask pixels using contour()
                                 ff = 5
                                 res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
@@ -1285,7 +1297,7 @@ class radiomicAnalyser:
                                 for pp in cc.allsegs[0]:
                                     pp = (pp - (ff - 1) / 2) / ff
                                     pp = np.round(pp - 0.5) + 0.5
-                                    ax.plot(pp[:, 0], pp[:, 1], 'b', linewidth=linewidth)
+                                    ax.plot(pp[:, 0], pp[:, 1], 'c', linewidth=1.2*linewidth)
                                 del cc
 
                     ax.xaxis.set_visible(False)
