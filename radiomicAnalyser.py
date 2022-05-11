@@ -796,14 +796,18 @@ class radiomicAnalyser:
 
         if loadAllImagesFromFolder is None:
             refUID = self.__getReferencedUIDs()
+            sopInstDict = self.sopInstDict
         else:
             # get UIDs directly from named folder
             dcmFiles = os.listdir(loadAllImagesFromFolder)
             refUID = []
+            sopInstDict = {}
             for dcmFile in dcmFiles:
                 if dcmFile[0] != '.':
-                    dcm = pydicom.read_file(os.path.join(loadAllImagesFromFolder, dcmFile))
+                    thisDcmFile = os.path.join(loadAllImagesFromFolder, dcmFile)
+                    dcm = pydicom.read_file(thisDcmFile)
                     refUID.append({'ReferencedSOPInstanceUID': dcm.SOPInstanceUID, 'label': 'ROI'})
+                    sopInstDict[dcm.SOPInstanceUID] = thisDcmFile
             self.ReferencedSeriesUID = dcm.SeriesInstanceUID
 
         if hasattr(self, 'ReferencedSeriesUID'):
@@ -824,7 +828,7 @@ class radiomicAnalyser:
         refSopInstUIDs = list(set([x['ReferencedSOPInstanceUID'] for x in refUID]))
 
         # get study date and time so they can go into the csv output
-        dcm = pydicom.dcmread(self.sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
+        dcm = pydicom.dcmread(sopInstDict[refUID[0]['ReferencedSOPInstanceUID']])
         self.StudyPatientName = str(dcm.PatientName)
         self.dcmPatientName = str(dcm.PatientName) # assume dcmPatientName and StudyPatientName are the same at this point.  We may manually edit StudyPatientName using editStudyPatientName if we need to
         self.StudyDate = dcm.StudyDate
@@ -910,7 +914,7 @@ class radiomicAnalyser:
 
 
         for refSopInstUID in refSopInstUIDs:
-            dcm = pydicom.dcmread(self.sopInstDict[refSopInstUID])
+            dcm = pydicom.dcmread(sopInstDict[refSopInstUID])
 
             # check references match as expected
             if dcm.SeriesInstanceUID != self.ReferencedSeriesUID:
