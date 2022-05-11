@@ -143,14 +143,14 @@ class xnatDownloader:
     ##########################
     # Download scans associated with listed experiments.
     # Folder structure is: experiment>scan>image and is the same as for downloadSubjectList()
-    def experimentList_downloadExperiments(self, experimentList):
+    def experimentList_downloadExperiments(self, experimentList, destinFolder = None):
         for experiment in experimentList:
             print(experiment + ':')
             try:
                 with xnat.connect(server=self.serverURL) as self.xnat_session:
                     if experiment in self.xnat_session.projects[self.projectStr].experiments.keys():
                         xnat_experiment = self.xnat_session.projects[self.projectStr].experiments[experiment]
-                        self.__downloadAndRenameExperimentFolder(xnat_experiment)
+                        self.__downloadAndRenameExperimentFolder(xnat_experiment, destinFolder=destinFolder)
                     else:
                         print('Experiment not found!')
                 print(' ')
@@ -161,7 +161,7 @@ class xnatDownloader:
     ##########################
     # Download listed scans.
     # Folder structure is: experiment>scan>image and is the same as for downloadSubjectList()
-    def scanList_downloadScans(self, scanList, scanFormat='ID', destinFolder=None):
+    def scanList_downloadScans(self, scanList, scanFormat='ID', destinFolder = None):
         for scan in scanList:
             experimentID = scan[0]
             scanID = scan[1]
@@ -172,17 +172,11 @@ class xnatDownloader:
                         xnat_experiment = self.xnat_session.projects[self.projectStr].experiments[experimentID]
                         if scanFormat is 'ID':
                             if scanID in xnat_experiment.scans.data.keys():
-                                if destinFolder is None:
-                                    self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID)
-                                else:
-                                    self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID, destinFolder=destinFolder)
+                                self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID, destinFolder=destinFolder)
                         elif scanFormat is 'scanDescription':
                             for item in xnat_experiment.scans.data.items():
                                 if scanID == item[1].type:
-                                    if destinFolder is None:
-                                        self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0])
-                                    else:
-                                        self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0], destinFolder=destinFolder)
+                                    self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0], destinFolder=destinFolder)
                         else:
                             print('Scan not found!')
                     else:
@@ -355,7 +349,10 @@ class xnatDownloader:
 
 
     ##########################
-    def __downloadAndRenameExperimentFolder(self, xnat_experiment, scanID=None, destinFolder='experiments'):
+    def __downloadAndRenameExperimentFolder(self, xnat_experiment, scanID=None, destinFolder = None):
+
+        if destinFolder is None:
+            destinFolder = 'experiments'
 
         # download experiment and find the folder that it comes in (occasionally the folder name will be something other
         # than the experiment label)
