@@ -737,7 +737,7 @@ class radiomicAnalyser:
         return np.dot(Vr, np.dot(x, np.transpose(Vc))) / (self.fineGrid * self.fineGrid)
 
     ##########################
-    def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False, includeContiguousEmptySlices=True):
+    def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False, includeContiguousEmptySlices=True, loadAllImagesFromFolder=None):
 
         # direct loading if specified
         if fileType == 'nii':
@@ -794,7 +794,18 @@ class radiomicAnalyser:
             self.imageDataOriginal = copy.deepcopy(self.imageData)
             return
 
-        refUID = self.__getReferencedUIDs()
+        if loadAllImagesFromFolder is None:
+            refUID = self.__getReferencedUIDs()
+        else:
+            # get UIDs directly from named folder
+            dcmFiles = os.listdir(loadAllImagesFromFolder)
+            refUID = []
+            for dcmFile in dcmFiles:
+                if dcmFile[0] != '.':
+                    dcm = pydicom.read_file(os.path.join(loadAllImagesFromFolder, dcmFile))
+                    refUID.append({'ReferencedSOPInstanceUID': dcm.SOPInstanceUID, 'label': 'ROI'})
+            self.ReferencedSeriesUID = dcm.SeriesInstanceUID
+
         if hasattr(self, 'ReferencedSeriesUID'):
             print('Referenced SeriesInstanceUID = ' + str(self.ReferencedSeriesUID))
 
@@ -938,6 +949,7 @@ class radiomicAnalyser:
             else:
                 RescaleIntercept = 0.0
             imSlice.append(RescaleSlope * dcm.pixel_array + RescaleIntercept)
+        print(' ')
 
         if len(set(imageAcquisitionNumber))>1:
             print('\033[1m\033[91mSEVERE WARNING!!  radiomicAnalyser.LoadImageData(): Referenced SOPInstances span more than one AcqusitionNumber!\033[0m\033[0m')
@@ -1016,72 +1028,88 @@ class radiomicAnalyser:
 
 
     ##########################
-    def __getReferencedUIDsDicom(self):
-        dcm = pydicom.dcmread(self.assessorFileName)
-        if dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.481.3':
-            # Dicom RT
-            # check only one item in each level of hierarchy going down to ReferencedSeriesUID
-            if len(dcm.ReferencedFrameOfReferenceSequence) != 1:
-                raise Exception("DICOM RT file referencing more than one frame of reference not supported!")
-            rfors = dcm.ReferencedFrameOfReferenceSequence[0]
+    def __getReferencedUIDsDicom(self, assessorFileName=None):
 
-            if len(rfors.RTReferencedStudySequence) != 1:
-                raise Exception("DICOM RT file referencing more than one study not supported!")
-            rtrss = rfors.RTReferencedStudySequence[0]
+        # get filename from self, unless an explicit input is given.  This allows us to use this function recursively when a 3D mask is available as a collection of dicom files (one per slice), rather than as one file.
+        if assessorFileName is None:
+            assessorFileName = self.assessorFileName
 
-            self.ReferencedSeriesUID = rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
+        annotationObjectList = []
 
-            if len(rtrss.RTReferencedSeriesSequence) != 1:
-                raise Exception("DICOM RT file referencing more than one series not supported!")
+        if os.path.isfile(assessorFileName):
+            dcm = pydicom.dcmread(assessorFileName)
+            if dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.481.3':
+                # Dicom RT
+                # check only one item in each level of hierarchy going down to ReferencedSeriesUID
+                if len(dcm.ReferencedFrameOfReferenceSequence) != 1:
+                    raise Exception("DICOM RT file referencing more than one frame of reference not supported!")
+                rfors = dcm.ReferencedFrameOfReferenceSequence[0]
 
-            roiNameDict = {}
-            for ssr in dcm.StructureSetROISequence:
-                roiNameDict[ssr.ROINumber] = ssr.ROIName
+                if len(rfors.RTReferencedStudySequence) != 1:
+                    raise Exception("DICOM RT file referencing more than one study not supported!")
+                rtrss = rfors.RTReferencedStudySequence[0]
 
-            annotationObjectList = []
-            for rcs in dcm.ROIContourSequence:
-                label = roiNameDict[rcs.ReferencedROINumber]
-                for cs in rcs.ContourSequence:
-                    if len(cs.ContourImageSequence) != 1:
-                        raise Exception(
-                            "DICOM RT file containing (individual) contour that references more than one image not supported!")
-                    annotationObjectList.append(
-                        {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
-                         "label": label})
-            return annotationObjectList
+                self.ReferencedSeriesUID = rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
 
-        elif dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
-            # Segmentation Storage
-            # check only one referenced series
-            if len(dcm.ReferencedSeriesSequence) != 1:
-                raise Exception("DICOM SEG file referencing more than one series not supported!")
+                if len(rtrss.RTReferencedSeriesSequence) != 1:
+                    raise Exception("DICOM RT file referencing more than one series not supported!")
 
-            # get list of all ReferencedSopInstanceUIDs
-            annotationObjectList = []
-            if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
-                for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
-                    if len(funGrpSeq.DerivationImageSequence) != 1:
-                        raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
-                    if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
-                        raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
-                    if len(funGrpSeq.SegmentIdentificationSequence) != 1:
-                        raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
-                    referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
-                    label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
-                    annotationObjectList.append(
-                        {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID,
-                         "label": label})
+                roiNameDict = {}
+                for ssr in dcm.StructureSetROISequence:
+                    roiNameDict[ssr.ROINumber] = ssr.ROIName
 
-            # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
-            # just put unknown for segment label
-            elif 'ReferencedInstanceSequence' in dcm.ReferencedSeriesSequence[0]:
-                for refSerItem in dcm.ReferencedSeriesSequence[0].ReferencedInstanceSequence:
-                    annotationObjectList.append(
-                        {"ReferencedSOPInstanceUID": refSerItem.ReferencedSOPInstanceUID,
-                         "label": 'unknown'})
+                for rcs in dcm.ROIContourSequence:
+                    label = roiNameDict[rcs.ReferencedROINumber]
+                    for cs in rcs.ContourSequence:
+                        if len(cs.ContourImageSequence) != 1:
+                            raise Exception(
+                                "DICOM RT file containing (individual) contour that references more than one image not supported!")
+                        annotationObjectList.append(
+                            {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
+                             "label": label})
 
-            self.ReferencedSeriesUID = dcm.ReferencedSeriesSequence[0].SeriesInstanceUID
-            return annotationObjectList
+            elif dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
+                # Segmentation Storage
+                # check only one referenced series
+                if len(dcm.ReferencedSeriesSequence) != 1:
+                    raise Exception("DICOM SEG file referencing more than one series not supported!")
+
+                # get list of all ReferencedSopInstanceUIDs
+                if 'DerivationImageSequence' in dcm.PerFrameFunctionalGroupsSequence[0] and 'SegmentIdentificationSequence' in dcm.PerFrameFunctionalGroupsSequence[0]:
+                    for n, funGrpSeq in enumerate(dcm.PerFrameFunctionalGroupsSequence):
+                        if len(funGrpSeq.DerivationImageSequence) != 1:
+                            raise Exception("Dicom Seg file has more than one element in DerivationImageSequence!")
+                        if len(funGrpSeq.DerivationImageSequence[0].SourceImageSequence) != 1:
+                            raise Exception("Dicom Seg file has more than one element in SourceImageSequence!")
+                        if len(funGrpSeq.SegmentIdentificationSequence) != 1:
+                            raise Exception("Dicom Seg file has more than one element in SegmentIdentificationSequence!")
+                        referencedSegmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+                        label = dcm.SegmentSequence._list[referencedSegmentNumber - 1].SegmentLabel
+                        annotationObjectList.append(
+                            {"ReferencedSOPInstanceUID": funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID,
+                             "label": label})
+
+                # the TCIA nsclc-radiogenomics data have messed up the labels and stored the ReferencedSOPInstanceUIDs in a strange place
+                # just put unknown for segment label
+                elif 'ReferencedInstanceSequence' in dcm.ReferencedSeriesSequence[0]:
+                    for refSerItem in dcm.ReferencedSeriesSequence[0].ReferencedInstanceSequence:
+                        annotationObjectList.append(
+                            {"ReferencedSOPInstanceUID": refSerItem.ReferencedSOPInstanceUID,
+                             "label": 'unknown'})
+
+                self.ReferencedSeriesUID = dcm.ReferencedSeriesSequence[0].SeriesInstanceUID
+
+        else:
+            print('Warning: Assessors should be a single file, not multiples!')
+        #     segFiles = os.listdir(assessorFileName)
+        #     annotationObjectList = []
+        #     for segFile in segFiles:
+        #         thisAssessor = os.path.join(assessorFileName, segFile)
+        #         xx = self.__getReferencedUIDsDicom(assessorFileName=thisAssessor)
+        #         print(xx)
+        #         #annotationObjectList.append()
+
+        return annotationObjectList
 
 
     ##########################
@@ -1106,16 +1134,30 @@ class radiomicAnalyser:
 
     ##########################
     def __getAnnotationUID(self):
-        if self.assessorStyle['format'].lower() == 'dcm':
-            dcm = pydicom.dcmread(self.assessorFileName)
-            annotationUID = dcm.SOPInstanceUID
-        elif self.assessorStyle['format'].lower() == 'xml':
-            xDOM = minidom.parse(self.assessorFileName)
-            annotationUID = xDOM.getElementsByTagName('ImageAnnotation').item(0).getElementsByTagName('uniqueIdentifier').item(0).getAttribute('root')
-        elif self.assessorStyle['format'].lower() == 'nii':
-            annotationUID = ''
-        elif self.assessorStyle['format'].lower() == 'nrrd':
-            annotationUID = ''
+        if os.path.isfile(self.assessorFileName):
+            if self.assessorStyle['format'].lower() == 'dcm':
+                dcm = pydicom.dcmread(self.assessorFileName)
+                annotationUID = dcm.SOPInstanceUID
+            elif self.assessorStyle['format'].lower() == 'xml':
+                xDOM = minidom.parse(self.assessorFileName)
+                annotationUID = xDOM.getElementsByTagName('ImageAnnotation').item(0).getElementsByTagName('uniqueIdentifier').item(0).getAttribute('root')
+            elif self.assessorStyle['format'].lower() == 'nii':
+                annotationUID = ''
+            elif self.assessorStyle['format'].lower() == 'nrrd':
+                annotationUID = ''
+        else:
+            if self.assessorStyle['format'].lower() == 'dcm':
+                dcmFiles = os.listdir(self.assessorFileName)
+                annotationUID = []
+                for dcmFile in dcmFiles:
+                    try:
+                        dcm = pydicom.dcmread(os.path.join(self.assessorFileName, dcmFile))
+                        annotationUID.append(dcm.SOPInstanceUID)
+                    except InvalidDicomError:
+                        a = 1 # do nothing
+            else:
+                raise Exception('Assessor folder expected to contain dicom files!')
+
         return annotationUID
 
 
