@@ -139,6 +139,11 @@ class xnatDownloader:
             except Exception as e:
                 print(e)
 
+    ########################
+    # download all experiments in project
+    def downloadExperiments_Project(self, destinFolder=None):
+        experimentList = self.getExperimentList_Project()
+        self.experimentList_downloadExperiments(experimentList, destinFolder=destinFolder)
 
     ##########################
     # Download scans associated with listed experiments.
