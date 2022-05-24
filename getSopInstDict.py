@@ -6,7 +6,7 @@ import pickle
 # make dictionary to find image from its SOPInstanceUID
 # save file and recompute if necessary
 # if sopClassUid is input then it will also output a list of sopInstances that match this sopClassUid
-def getSopInstDict(path):
+def getSopInstDict(path, ignoreInstanceNumberClash=False):
 
     sopInstDict = {}
     sopInst2instanceNumberDict = {}
@@ -54,7 +54,7 @@ def getSopInstDict(path):
                     if hasattr(dcm,'InstanceNumber'):
                         thisInstanceNumber = int(dcm.InstanceNumber)
                         sopInst2instanceNumberDict[str(dcm.SOPInstanceUID)] = thisInstanceNumber
-                        thisDict = {'SOPInstanceUID':str(dcm.SOPInstanceUID)}
+                        thisDict = {'SOPInstanceUID':str(dcm.SOPInstanceUID), 'fileName':imageFile}
                         if hasattr(dcm,'AcquisitionNumber') and dcm.AcquisitionNumber:
                             thisDict['AcquisitionNumber'] = int(dcm.AcquisitionNumber)
                         else:
@@ -62,7 +62,7 @@ def getSopInstDict(path):
                         if hasattr(dcm,'SliceLocation'):
                             thisDict['SliceLocation'] = dcm.SliceLocation
                         if dcm.SeriesInstanceUID in instanceNumberDict:
-                            if int(dcm.InstanceNumber) in instanceNumberDict[dcm.SeriesInstanceUID].keys():
+                            if not ignoreInstanceNumberClash and int(dcm.InstanceNumber) in instanceNumberDict[dcm.SeriesInstanceUID].keys():
                                 raise Exception('InstanceNumber already found in SeriesInstanceUID dictionary!')
                             else:
                                 instanceNumberDict[dcm.SeriesInstanceUID][thisInstanceNumber] = thisDict
