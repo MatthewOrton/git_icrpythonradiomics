@@ -739,6 +739,8 @@ class radiomicAnalyser:
     ##########################
     def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False, includeContiguousEmptySlices=True, loadAllImagesFromFolder=None):
 
+        self.includeExtraTopAndBottomSlices = includeExtraTopAndBottomSlices
+
         # direct loading if specified
         if fileType == 'nii':
             imageData = {}
@@ -883,7 +885,10 @@ class radiomicAnalyser:
             allInstanceNumbers = list(range(min(instanceNumbers), max(instanceNumbers) + 1))
             extraInstanceNumbers = list(set(allInstanceNumbers) - set(instanceNumbers))
             if len(extraInstanceNumbers)>0:
-                print('\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m Instance numbers without contours: ' + self.StudyPatientName + ': ' + str(extraInstanceNumbers) + '\033[0m\033[0m')
+                warningMessage = '\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m Instance numbers without contours: ' + self.StudyPatientName + ': ' + str(extraInstanceNumbers) + '\033[0m\033[0m'
+                print(warningMessage)
+            else:
+                warningMessage = ''
             # add SOPInstUIDs of extra slices
             for extraInstanceNumber in extraInstanceNumbers:
                 extraSopInstance = instanceDict[extraInstanceNumber]['SOPInstanceUID']
@@ -995,6 +1000,7 @@ class radiomicAnalyser:
         # we need to reset back
         self.imageDataOriginal = copy.deepcopy(self.imageData)
 
+        return warningMessage
 
     ##########################
     def permuteVoxels(self, fixedSeed=True):
@@ -1166,7 +1172,7 @@ class radiomicAnalyser:
 
 
     ##########################
-    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, padSize=10, minSize=40, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True, titleFontSize=7, linewidth=0.2):
+    def saveThumbnail(self, quantizedImageType=None, fileStr = '', scaling=None, vmin=None, vmax=None, showContours=False, padSize=10, minSize=40, showMaskBoundary=True, titleStrExtra='', showMaskHolesWithNewColour=False, axisLimits=None, bins=None, pathStr='roiThumbnails', showHistogram=True, titleFontSize=7, linewidth=0.2, warningMessage=''):
 
         def findMaskEdges(mask):
 
@@ -1282,10 +1288,24 @@ class radiomicAnalyser:
                 # ax = plt.subplot(pltRows, pltCols, n+1)
                 if n<(nPlt-2):
                     imDisp = imArr[n,:,:]
+                    maskHere = maskArr[n,:,:]
                     #nxx = np.round(minX+0.15*(maxX-minX)).astype(int)
                     #nyy = np.round(minY+0.2*(maxY-minY)).astype(int)
                     #imDisp[0:nxx, 0:nyy] = vmin
                     ax.imshow(imDisp, cmap='gray', vmin=vmin, vmax=vmax, interpolation='nearest')
+
+                    # big X if no contour
+                    if self.includeExtraTopAndBottomSlices:
+                        nMin = 2
+                        nMax = maskArr.shape[0]-3
+                    else:
+                        nMin = 0
+                        nMax = maskArr.shape[0]
+                    if n>=nMin and n<=nMax and np.all(maskHere==0):
+                        # may be missing contour, so mark this image so we can check
+                        ax.plot([minX, maxX], [minY, maxY], color=(0,1,0), linewidth=1)
+                        ax.plot([minX, maxX], [maxY, minY], color=(0,1,0), linewidth=1)
+
                     # ax.text(minX+0.02*(maxX-minX), minY+0.02*(maxY-minY), str(self.imageData["imageInstanceNumber"][n]), color='w', fontsize=3, ha='left', va='top', backgroundcolor='k', transform=ax.transAxes) #clip_on=True)
                     ax.text(0, 1, str(self.imageData["imageInstanceNumber"][n]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
                     holeColor = 'c'
@@ -1317,7 +1337,7 @@ class radiomicAnalyser:
                                     if (ff * (nn + 1) + 1) < len(xPlot):
                                         ax.plot(xPlot[ff * nn:ff * (nn + 1) + 1], yPlot[ff * nn:ff * (nn + 1) + 1], linewidth=linewidth, color='r')
                                 ax.plot(xPlot[ff * nn:], yPlot[ff * nn:], linewidth=linewidth, color='r')
-                    maskHere = maskArr[n,:,:]
+
                     if showMaskBoundary:
 
                         if np.any(maskHere>0):
@@ -1345,6 +1365,7 @@ class radiomicAnalyser:
                                     pp = np.round(pp - 0.5) + 0.5
                                     ax.plot(pp[:, 0], pp[:, 1], 'c', linewidth=1.2*linewidth)
                                 del cc
+
 
                     ax.xaxis.set_visible(False)
                     ax.yaxis.set_visible(False)
@@ -1384,9 +1405,9 @@ class radiomicAnalyser:
         titleStr = titleStr.replace(self.dcmPatientName, self.StudyPatientName)
         titleStr = titleStr.split('__II__')
         titleStr = r'$\bf{' + titleStr[0].replace('_', '\_') + '}$   ' + r'$\bf{' + self.roiObjectLabelFound.replace('_', '\_') + '}$  ' + '  '.join(titleStr[1:])
-        #    os.path.split(self.assessorFileName)[1].replace('__II__', '}$  ').split('.')[0] + '  ' + self.roiObjectLabelFound # + '  '  + self.ImageAnnotationCollection_Description
 
-        #titleStr = r'$\bf{' + titleStr.replace('__II__', '  ', 1) + '  ' + r'$\bf{' + self.roiObjectLabelFound.replace('_','\_') + '}$'
+        if warningMessage != '':
+            titleStrExtra += '\n' + warningMessage
 
         plt.gcf().suptitle(titleStr + ' ' + titleStrExtra, fontsize=titleFontSize, x = 0.05, horizontalalignment='left')
 
