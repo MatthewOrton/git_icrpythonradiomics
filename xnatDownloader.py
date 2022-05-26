@@ -123,6 +123,23 @@ class xnatDownloader:
 
 
     ##########################
+    def getAssessorList_experimentList(self, experimentList):
+
+        assessorList = []
+        with xnat.connect(server=self.serverURL) as xnat_session:
+            for experiment in experimentList:
+                xnat_experiment = xnat_session.projects[self.projectStr].experiments[experiment]
+                subjectName = xnat_experiment.data['dcmPatientName']
+                experimentLabel = xnat_experiment.label
+                for xnat_assessor in xnat_experiment.assessors.values():
+                    assessorList.append({'subject':subjectName,
+                                         'experiment':experimentLabel,
+                                         'assessor':xnat_assessor.label})
+                    print(subjectName + ' ' + experimentLabel + ' ' + xnat_assessor.label)
+        return assessorList
+
+
+    ##########################
     # Download annotations associated with listed experiments.
     # Store as flat files in self.downloadPath and change filename to make it easier to locate
     def experimentList_downloadAssessors(self, experimentList):
@@ -450,7 +467,6 @@ class xnatDownloader:
                                     newFileName = myStrJoin([subject, xnat_experiment.label, scanID, xnat_assessor.label])
                                     newFileName = os.path.join(destinFolder, newFileName+'.'+extFilter)
                                     os.rename(tempFile, newFileName)
-
 
 
 
