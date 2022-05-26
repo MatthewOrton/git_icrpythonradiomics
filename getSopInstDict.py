@@ -72,9 +72,12 @@ def getSopInstDict(path, ignoreInstanceNumberClash=False):
         print('Complete')
         print(' ')
 
+    warningMessages = []
     for seriesUID, acqList in AcquisitionNumberForChecking.items():
         if len(set(acqList))>1:
-            print('\033[1m\033[94mWARNING getSopInstDict(): Series has AcquisitionNumbers ' + str(list(set(acqList))) + ' SeriesInstanceUID = ' + str(seriesUID) + '\033[0m\033[0m')
+            warningMessage = 'WARNING!! Image series has multiple acquisitions'
+            print('\033[1m\033[94m ' + warningMessage + str(list(set(acqList))) + ' SeriesInstanceUID = ' + str(seriesUID) + '\033[0m\033[0m')
+            warningMessages.append(warningMessage)
 
     # remove from dictionary any files that aren't found on file system
     filesNotPresent = list(set(list(sopInstDict.values())) - set(glob.glob(os.path.join(path, '**'), recursive=True)))
@@ -84,4 +87,4 @@ def getSopInstDict(path, ignoreInstanceNumberClash=False):
         with open(quickLoad, 'wb') as f:
             pickle.dump({'sopInstDict':sopInstDict, 'sopInstToSopClassUidDict':sopInstToSopClassUidDict, 'instanceNumberDict':instanceNumberDict, 'sopInst2instanceNumberDict':sopInst2instanceNumberDict, 'AcquisitionNumberForChecking':AcquisitionNumberForChecking}, f)
 
-    return sopInstDict, sopInstToSopClassUidDict, instanceNumberDict, sopInst2instanceNumberDict
+    return sopInstDict, sopInstToSopClassUidDict, instanceNumberDict, sopInst2instanceNumberDict, warningMessages
