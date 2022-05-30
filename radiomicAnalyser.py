@@ -740,6 +740,7 @@ class radiomicAnalyser:
     def loadImageData(self, fileType=None, fileName=None, includeExtraTopAndBottomSlices=False, includeContiguousEmptySlices=True, loadAllImagesFromFolder=None):
 
         self.includeExtraTopAndBottomSlices = includeExtraTopAndBottomSlices
+        warningMessage = ''
 
         # direct loading if specified
         if fileType == 'nii':
@@ -887,8 +888,6 @@ class radiomicAnalyser:
             if len(extraInstanceNumbers)>0:
                 warningMessage = '\033[1m\033[94mWARNING!!\033[0m\033[0m \033[1m\033[91m Instance numbers without contours: ' + self.StudyPatientName + ': ' + str(extraInstanceNumbers) + '\033[0m\033[0m'
                 print(warningMessage)
-            else:
-                warningMessage = ''
             # add SOPInstUIDs of extra slices
             for extraInstanceNumber in extraInstanceNumbers:
                 extraSopInstance = instanceDict[extraInstanceNumber]['SOPInstanceUID']
