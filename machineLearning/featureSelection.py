@@ -4,8 +4,50 @@ import pandas as pd
 
 from sklearn.base import BaseEstimator
 from sklearn.feature_selection import SelectorMixin
-from sklearn.utils.validation import check_is_fitted
+from sklearn.utils.validation import (check_is_fitted, FLOAT_DTYPES, _deprecate_positional_args)
 from sklearn.utils import check_array, safe_mask
+from sklearn.preprocessing import StandardScaler
+from scipy import sparse
+
+
+
+# version of the StandardScaler that outputs a DataFrame if the input is a DataFrame
+class StandardScalerDf(StandardScaler):
+
+    def transform(self, X, copy=None):
+
+        # keep column names if input is DataFrame
+        if isinstance(X, pd.DataFrame):
+            columnNames = X.columns
+            inputIsDataFrame = True
+        else:
+            inputIsDataFrame = False
+
+        X = super(StandardScalerDf, self).transform(X, copy=copy)
+
+        # add column names back if input is DataFrame
+        if inputIsDataFrame:
+            X = pd.DataFrame(X, columns=columnNames)
+
+        return X
+
+    def inverse_transform(self, X, copy=None):
+
+        # keep column names if input is DataFrame
+        if isinstance(X, pd.DataFrame):
+            columnNames = X.columns
+            inputIsDataFrame = True
+        else:
+            inputIsDataFrame = False
+
+        X = super(StandardScalerDf, self).inverse_transform(X, copy=copy)
+
+        # add column names back if input is DataFrame
+        if inputIsDataFrame:
+            X = pd.DataFrame(X, columns=columnNames)
+
+        return X
+
 
 
 class featureSelection_groupName(BaseEstimator, SelectorMixin):
@@ -252,3 +294,32 @@ class featureSelection_correlation(BaseEstimator, SelectorMixin):
         mask = np.zeros(X.shape[1], dtype=bool)
         mask[colInd] = True
         return mask
+
+    def transform(self, X):
+        """Reduce X to the selected features.
+
+        Parameters
+        ----------
+        X : array of shape [n_samples, n_features]
+            The input samples.
+
+        Returns
+        -------
+        X_r : array of shape [n_samples, n_selected_features]
+            The input samples with only the selected features.
+        """
+        colNames = X.columns
+        X = np.array(X)
+        tags = self._get_tags()
+        X = check_array(X, dtype=None, accept_sparse='csr',
+                        force_all_finite=not tags.get('allow_nan', True))
+        mask = self.get_support()
+        if not mask.any():
+            warn("No features were selected: either the data is"
+                 " too noisy or the selection test too strict.",
+                 UserWarning)
+            return np.empty(0).reshape((X.shape[0], 0))
+        if len(mask) != X.shape[1]:
+            raise ValueError("X has a different shape than during fitting.")
+        X = pd.DataFrame(X, columns=colNames)
+        return X.iloc[:, safe_mask(X, mask)]
