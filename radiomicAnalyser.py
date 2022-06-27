@@ -35,6 +35,9 @@ class radiomicAnalyser:
 
     def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0]):
 
+        print(' ')
+        print('\033[1mProcessing : ' + self.assessorFileName +'\033[0m')
+
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
         self.assessorStyle = project["assessorStyle"]
@@ -62,8 +65,6 @@ class radiomicAnalyser:
 
         self.annotationUID = self.__getAnnotationUID()
 
-        print(' ')
-        print('\033[1mProcessing : ' + self.assessorFileName +'\033[0m')
 
     def getModuleFileLocation(self):
         return __file__
