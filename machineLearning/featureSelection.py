@@ -92,7 +92,7 @@ class featureSelection_groupName(BaseEstimator, SelectorMixin):
 
 class featureSelection_correlation(BaseEstimator, SelectorMixin):
 
-    def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False, namedColumnsKeep=[], featureGroupHierarchy=[]):
+    def __init__(self, threshold=0.75, exact=False, keepFirstColumn=False, namedColumnsKeep=[], featureGroupHierarchy=[], outputNumpy=False):
         self.threshold = threshold
         self.exact = exact
         self.keepFirstColumn = keepFirstColumn  # this input forces algorithm to keep the first column - useful if we know that a particular feature (e.g. tumour size) is likely to be informative and interpretable, so we want to keep it all the time and discard and features that are correlated with it
