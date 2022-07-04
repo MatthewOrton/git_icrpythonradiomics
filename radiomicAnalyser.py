@@ -36,7 +36,7 @@ class radiomicAnalyser:
     def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0]):
 
         print(' ')
-        print('\033[1mProcessing : ' + self.assessorFileName +'\033[0m')
+        print('\033[1mProcessing : ' + assessorFileName +'\033[0m')
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
@@ -1343,7 +1343,7 @@ class radiomicAnalyser:
                         if np.any(maskHere>0):
                             # tricks to get the boundary of the outside of the mask pixels using contour()
                             ff = 5
-                            res = cv2.resize(maskHere, dsize=(maskHere.shape[0] * ff, maskHere.shape[1] * ff), interpolation=cv2.INTER_NEAREST)
+                            res = cv2.resize(maskHere, dsize=(maskHere.shape[1] * ff, maskHere.shape[0] * ff), interpolation=cv2.INTER_NEAREST)
                             cc = ax.contour(res, levels=[0.5])
                             for pp in cc.allsegs[0]:
                                 pp = (pp - (ff - 1)/2)/ff
