@@ -97,6 +97,7 @@ class featureSelection_correlation(BaseEstimator, SelectorMixin):
         self.exact = exact
         self.keepFirstColumn = keepFirstColumn  # this input forces algorithm to keep the first column - useful if we know that a particular feature (e.g. tumour size) is likely to be informative and interpretable, so we want to keep it all the time and discard and features that are correlated with it
         self.featureGroupHierarchy = featureGroupHierarchy
+        self.outputNumpy = outputNumpy
 
         # make sure self.ignoreColumns is a list, even if it only has one element
         if isinstance(namedColumnsKeep, list):
@@ -128,13 +129,25 @@ class featureSelection_correlation(BaseEstimator, SelectorMixin):
             return self
 
         if self.featureGroupHierarchy:
-            xCorr = np.abs(spearmanr(np.array(X)).correlation)
+            # Helen addition for 2 features
+            if X.shape[1] == 2:
+                colInd = np.nonzero(np.var(X.values, axis=0) > 0)[0]
+                xc = np.abs(spearmanr(X.values[:, colInd]).correlation)
+                xCorr = np.array([[1, xc], [xc, 1]])
+            else:
+                xCorr = np.abs(spearmanr(np.array(X)).correlation)
+
+            # xCorr = np.abs(spearmanr(np.array(X)).correlation)
             featuresAtRisk = np.ones(X.shape[1], dtype=bool)
             interGroupDiscardMask = np.zeros(X.shape[1], dtype=bool)
             intraGroupDiscardMask = np.zeros(X.shape[1], dtype=bool)
             for featureGroup in self.featureGroupHierarchy:
                 thisFeatureGroup = np.logical_and(featuresAtRisk, X.columns.str.contains(featureGroup))
+                if not any(thisFeatureGroup):
+                    continue
+                #
                 intraGroupDiscardMask[thisFeatureGroup] = np.logical_not(self.getNonCorrelatedMask_(X.loc[:,thisFeatureGroup]))
+                #
                 featuresAtRisk[thisFeatureGroup] = False
                 xCorrMax = np.max(xCorr[np.logical_not(featuresAtRisk), :][:, featuresAtRisk], axis=0)
                 interGroupDiscardMask[featuresAtRisk] = np.logical_or(interGroupDiscardMask[featuresAtRisk], xCorrMax >= self.threshold)
@@ -199,7 +212,11 @@ class featureSelection_correlation(BaseEstimator, SelectorMixin):
             else:
                 # fit method of arity 2 (supervised transformation)
                 self.fit(X, y, **fit_params)
-            return X.loc[:,self.mask_]
+            if self.outputNumpy:
+                X = np.array(X)
+                return X[:, self.mask_]
+            else:
+                return X.loc[:,self.mask_]
         else:
             if y is None:
                 # fit method of arity 1 (unsupervised transformation)
@@ -321,5 +338,8 @@ class featureSelection_correlation(BaseEstimator, SelectorMixin):
             return np.empty(0).reshape((X.shape[0], 0))
         if len(mask) != X.shape[1]:
             raise ValueError("X has a different shape than during fitting.")
-        X = pd.DataFrame(X, columns=colNames)
-        return X.iloc[:, safe_mask(X, mask)]
+        if self.outputNumpy:
+            return X[:, safe_mask(X, mask)]
+        else:
+            X = pd.DataFrame(X, columns=colNames)
+            return X.iloc[:, safe_mask(X, mask)]
