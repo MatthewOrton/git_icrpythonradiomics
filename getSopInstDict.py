@@ -6,6 +6,7 @@ import pickle
 # make dictionary to find image from its SOPInstanceUID
 # save file and recompute if necessary
 # if sopClassUid is input then it will also output a list of sopInstances that match this sopClassUid
+
 def getSopInstDict(path, ignoreInstanceNumberClash=False):
 
     sopInstDict = {}
