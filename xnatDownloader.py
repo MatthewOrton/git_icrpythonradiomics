@@ -29,6 +29,7 @@ class xnatDownloader:
                  assessorStyle='',
                  removeSecondaryAndSnapshots=False,
                  roiCollectionLabelFilter='',
+                 roiCollectionLabelFilterExclude=None,
                  roiLabelFilter=None,
                  deleteExisting=False,
                  assessorFolder='assessors'):
@@ -39,6 +40,7 @@ class xnatDownloader:
         self.assessorStyle = assessorStyle
         self.removeSecondaryAndSnapshots = removeSecondaryAndSnapshots
         self.roiCollectionLabelFilter = roiCollectionLabelFilter
+        self.roiCollectionLabelFilterExclude = roiCollectionLabelFilterExclude
         self.roiLabelFilter = roiLabelFilter
         self.xnat_session = None
         self.assessorFolder = assessorFolder
@@ -499,15 +501,22 @@ class xnatDownloader:
                            glob.glob(os.path.join(self.downloadPathUnzip, '**', '*.'+self.assessorStyle["format"].upper()), recursive=True)
 
                 if len(thisFile) > 1:
-                    raise Exception("More than one .dcm or .xml file in downloaded assessor!")
+                    for oneFile in thisFile:
+                        os.remove(oneFile)
+                    rmtree(self.downloadPathUnzip)
+                    print("WARNING: More than one .dcm or .xml file in downloaded assessor!")
+                    continue
+
                 if len(thisFile) == 0:
-                    raise Exception("Cannot find .dcm or .xml file in downloaded assessor!")
+                    rmtree(self.downloadPathUnzip)
+                    print("WARNING: Cannot find .dcm or .xml file in downloaded assessor!")
+                    continue
 
                 references = self.__getReferencedUIDsAndLabels(thisFile[0])
 
                 # tidy up and skip if format doesn't match requested
                 thisExt = os.path.splitext(thisFile[0])[1]
-                if (thisExt.lower() != '.'+self.assessorStyle["format"].lower()) or (self.roiCollectionLabelFilter.lower() not in references["roiCollectionLabel"].lower()):
+                if (thisExt.lower() != '.'+self.assessorStyle["format"].lower()) or (self.roiCollectionLabelFilter.lower() not in references["roiCollectionLabel"].lower()) or (self.roiCollectionLabelFilterExclude is not None and self.roiCollectionLabelFilterExclude.lower() in references["roiCollectionLabel"].lower()):
                     os.remove(thisFile[0])
                     rmtree(self.downloadPathUnzip)
                     continue
