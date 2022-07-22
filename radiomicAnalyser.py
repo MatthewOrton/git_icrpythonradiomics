@@ -33,7 +33,7 @@ from mixture_cdf import BayesianGaussianMixtureCdf
 
 class radiomicAnalyser:
 
-    def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0]):
+    def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0], minContourArea=0.1):
 
         print(' ')
         print('\033[1mProcessing : ' + assessorFileName +'\033[0m')
@@ -50,6 +50,7 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description = ' '
         self.axialTol = axialTol
         self.roiShift = roiShift
+        self.minContourArea = minContourArea
 
         # these are populated by self.loadImageData() because they are taken from the image dicom files
         # PatientName and dcmPatientName should usually be the same, but sometimes we need to change the patientName that
@@ -571,6 +572,37 @@ class radiomicAnalyser:
         self.ImageAnnotationCollection_Description =  rts.StructureSetLabel # name of attribute in self is just to fit with AIM file naming.
         self.mask, self.contours = self.__createMaskDcmRtsArrayFromContours(rts)
 
+    ###########################
+    # utility function that gets used multiple times
+    def __processContour(self, cs):
+
+        coords = np.array([float(x) for x in cs.ContourData])
+        polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+
+        # https://en.wikipedia.org/wiki/Shoelace_formula
+        # this formula should work for planar polygon with arbitrary orientation
+        crossSum = np.sum(np.cross(polygonPatient[0:-2, :], polygonPatient[1:-1, :]), axis=0)
+        crossSum += np.cross(polygonPatient[-1, :], polygonPatient[0, :])
+        contourArea = 0.5 * np.linalg.norm(crossSum)
+
+        referencedSOPInstanceUID = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
+        if hasattr(self,'imageData') and contourArea > self.minContourArea and self.imageData["sopInstUID"].count(referencedSOPInstanceUID)>0:
+            sliceIdx = self.imageData["sopInstUID"].index(referencedSOPInstanceUID)
+            origin = self.imageData["imagePositionPatient"][sliceIdx]
+            spacing = self.imageData["pixelSpacing"]
+            xNorm = self.imageData["imageOrientationPatient"][0:3]
+            yNorm = self.imageData["imageOrientationPatient"][3:6]
+            x = np.dot(polygonPatient - origin, xNorm) / spacing[0]
+            y = np.dot(polygonPatient - origin, yNorm) / spacing[1]
+            pixelArea = spacing[0]*spacing[1]
+            return contourArea, x, y, sliceIdx, pixelArea
+
+        else:
+            return contourArea, None, None, None, None
+
+
+
+
     ##########################
     def __createMaskDcmRtsArrayFromContours(self, rts, checkRoiLabel=True):
 
@@ -595,26 +627,20 @@ class radiomicAnalyser:
             if len(cs.ContourImageSequence) != 1:
                 raise Exception("DICOM RT file containing (individual) contour that references more than one image not supported!")
 
-            referencedSOPInstanceUID = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
-            coords = np.array([float(x) for x in cs.ContourData])
-            polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+            contourArea, x, y, sliceIdx, _ = self.__processContour(cs)
 
-            sliceIdx = self.imageData["sopInstUID"].index(referencedSOPInstanceUID)
-            origin = self.imageData["imagePositionPatient"][sliceIdx]
-            spacing = self.imageData["pixelSpacing"]
-            xNorm = self.imageData["imageOrientationPatient"][0:3]
-            yNorm = self.imageData["imageOrientationPatient"][3:6]
-            x = np.dot(polygonPatient - origin, xNorm) / spacing[0]
-            y = np.dot(polygonPatient - origin, yNorm) / spacing[1]
+            # this condition applied to match that in __getReferencedUIDsDicom
+            if contourArea > self.minContourArea:
 
-            # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
-            # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
-            # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
-            fill_row_coords, fill_col_coords = draw.polygon(y+self.roiShift[1], x+self.roiShift[0], (mask.shape[1], mask.shape[2]))
-            mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
+                # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+                # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+                # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+                fill_row_coords, fill_col_coords = draw.polygon(y+self.roiShift[1], x+self.roiShift[0], (mask.shape[1], mask.shape[2]))
+                mask[sliceIdx, fill_row_coords, fill_col_coords] = 1.0
 
-            # keep contours so we can display on thumbnail if we need to
-            contours[sliceIdx].append({"x":x, "y":y})
+                # keep contours so we can display on thumbnail i
+                # f we need to
+                contours[sliceIdx].append({"x":x, "y":y})
 
         return mask, contours
 
@@ -1074,9 +1100,16 @@ class radiomicAnalyser:
                         if len(cs.ContourImageSequence) != 1:
                             raise Exception(
                                 "DICOM RT file containing (individual) contour that references more than one image not supported!")
-                        annotationObjectList.append(
-                            {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
-                             "label": label})
+
+                        # check that contour is valid, i.e. larger than one pixel
+                        contourArea, _, _, _, _ = self.__processContour(cs)
+                        # this condition applied to match that in __createMaskDcmRtsArrayFromContours
+                        if contourArea > self.minContourArea:
+                            annotationObjectList.append(
+                                {"ReferencedSOPInstanceUID": cs.ContourImageSequence[0].ReferencedSOPInstanceUID,
+                                 "label": label})
+                        else:
+                            print('Tiny contour (area = ' + str(contourArea) + ') found on SOP instance ' + cs.ContourImageSequence[0].ReferencedSOPInstanceUID)
 
             elif dcm.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
                 # Segmentation Storage
