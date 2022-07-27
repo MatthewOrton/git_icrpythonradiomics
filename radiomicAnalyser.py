@@ -36,7 +36,7 @@ class radiomicAnalyser:
     def __init__(self, project, assessorFileName, sopInstDict=None, extraDictionaries=None, assessorSubtractFileName=None, axialTol=1e-6, roiShift=[0,0], minContourArea=0.1):
 
         print(' ')
-        print('\033[1mProcessing : ' + assessorFileName +'\033[0m')
+        print('\033[1mLoading : ' + assessorFileName +'\033[0m')
 
         self.projectStr = project["projectStr"]
         self.assessorFileName = assessorFileName
