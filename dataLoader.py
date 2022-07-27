@@ -4,12 +4,25 @@ from skimage import draw
 
 class dataLoader:
 
-    def __init__(self, assessorFile, seriesMap):
+    def __init__(self, assessorFile, seriesFolderDict, maxNonCompatibleInstances=0):
+
+        self.assessorFile = assessorFile
+        self.seriesFolderDict = seriesFolderDict
+
+        # This is a list of dicom tags that are checked to see if they match for all sopInstances in the series
+        self.tagsToMatch = ['Columns', 'Rows', 'ImageOrientationPatient', 'PixelSpacing', 'SliceThickness']
+
+        # This is to allow series to be loaded that have given number of instances with tags that do not match self.tagsToMatch
+        # This is because some series have a localizer in the same series, so this will be detected and removed
+        self.maxNonCompatibleInstances = maxNonCompatibleInstances
 
         self.assessor = pydicom.dcmread(assessorFile)
+        self.ReferencedSeriesUID = self.__getReferencedSeriesUID()
 
-        self.ReferencedSeriesUID = __getReferencedSeriesUID()
+        self.seriesData = None
+        self.__loadImageSeries()
 
+        self.__loadRTSdata()
 
 
     def __getReferencedSeriesUID(self):
@@ -18,7 +31,7 @@ class dataLoader:
         return rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
 
 
-    def __getScaledSlice(dcm):
+    def __getScaledSlice(self, dcm):
 
         # Extract pixel data and scale it, using default values if necessary.
 
@@ -32,7 +45,7 @@ class dataLoader:
             RescaleIntercept = 0.0
         return RescaleSlope * dcm.pixel_array + RescaleIntercept
 
-    def __getListOfNonMatchingSopInstancesToDiscard(sopInstDict, tagsToMatch, maxSpatiallyNonCompatibleInstances):
+    def __getNonMatchingSopInstances(self, sopInstDict):
 
         # Ideally all sopInstances in a series will have certain matching attributes, e.g. ImageOrientationPatient, PixelSpacing etc.
         #
@@ -41,20 +54,16 @@ class dataLoader:
         # If the number of non-matching images is below maxSpatiallyNonCompatibleInstances then get output a list of the sopInstances to discard.
 
         # Generate a hash of tagsToMatch for each sopInstance and find the unique values.
-        hashMeta = {key: hash(np.hstack([value[tag] for tag in tagsToMatch]).data.tobytes()) for key, value in sopInstDict.items()}
+        hashMeta = {key: hash(np.hstack([value[tag] for tag in self.tagsToMatch]).data.tobytes()) for key, value in sopInstDict.items()}
         hashMetaUnique = list(set([v for _, v in hashMeta.items()]))
 
-        # If too many non-matching sopInstances then return - calling function will handle displaying the error
-        if maxSpatiallyNonCompatibleInstances==0 and len(hashMetaUnique)>1:
-            return None
-
-        # If more than one unique hash with count above maxSpatiallyNonCompatibleInstances then return - calling function will handle error
-        hashMetaKeep = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) > maxSpatiallyNonCompatibleInstances]
+        # Find number of sopInstances with each unique hash, where the number of instances is above self.maxNonCompatibleInstances
+        hashMetaKeep = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) > self.maxNonCompatibleInstances]
         if len(hashMetaKeep)>1:
-            return None
+            raise Exception('More than one set of compatible SOPInstances found')
 
         # Get hash values that have fewer than maxSpatiallyNonCompatibleInstances instances and can therefore be discarded
-        hashMetaUniqueDiscard = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) <= maxSpatiallyNonCompatibleInstances]
+        hashMetaUniqueDiscard = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) <= self.maxNonCompatibleInstances]
 
         # Get SopInstances to discard
         sopInstDiscard = []
@@ -64,103 +73,68 @@ class dataLoader:
 
         return sopInstDiscard
 
-    def __processContour(contourData, sopInstance, series, roiShift={'row':0, 'col':0}):
 
-        # Process contour data to get contour in pixel coordinates and as a mask.
-        #
-        # Also get the contour area (in mm^2) so we can detect and remove contours that are too small, in particular
-        # we occasionally get contours that only consist of a single point.
 
-        coords = np.array([float(x) for x in contourData])
-        polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+    def getNamedROI(self, ROIName):
 
-        # https://en.wikipedia.org/wiki/Shoelace_formula
-        # this formula should work for planar polygon with arbitrary orientation
-        crossSum = np.sum(np.cross(polygonPatient[0:-2, :], polygonPatient[1:-1, :]), axis=0)
-        crossSum += np.cross(polygonPatient[-1, :], polygonPatient[0, :])
-        contourArea = 0.5 * np.linalg.norm(crossSum)
-
-        # Transform contour to pixel coordinates
-        origin = np.reshape(sopInstance['ImagePositionPatient'], (1,3))
-        spacing = series['PixelSpacing']
-        colNorm = np.reshape(series['ImageOrientationPatient'][0:3], (3,1))
-        rowNorm = np.reshape(series['ImageOrientationPatient'][3:6], (3,1))
-        colPixCoord = np.dot(polygonPatient - origin, colNorm) / spacing[0]
-        rowPixCoord = np.dot(polygonPatient - origin, rowNorm) / spacing[1]
-
-        # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
-        # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
-        # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
-        mask = np.zeros((series['Rows'], series['Columns'])).astype(bool)
-        fill_row_coords, fill_col_coords = draw.polygon(rowPixCoord + roiShift['row'], colPixCoord + roiShift['col'], (series['Columns'], series['Rows']))
-        mask[fill_row_coords, fill_col_coords] = True
-
-        return colPixCoord, rowPixCoord, contourArea, mask
-
-    def getNamedROI(series, ROIName):
-
-        if ROIName not in series['ROINames']:
-            print(ROIName + ' not found!')
-            return None
+        if ROIName not in self.seriesData['ROINames']:
+            raise Exception(ROIName + ' not found!')
 
         # Find which AcquisitionNumber the named ROI is in
         AcquisitionList = []
-        for k, v in series['SOPInstanceDict'].items():
+        for k, v in self.seriesData['SOPInstanceDict'].items():
             if len(v['ContourList'])>0:
                 for contour in v['ContourList']:
                     if contour['ROIName'] == ROIName:
                         AcquisitionList.append(v['AcquisitionNumber'])
         AcquisitionNumber = list(set(AcquisitionList))
         if len(AcquisitionNumber)>1:
-            print(ROIName + ' spans more than one Acquisition!')
-            return None
+            raise Exception(ROIName + ' spans more than one Acquisition!')
         AcquisitionNumber = AcquisitionNumber[0]
 
-        # Get SopInstances from this Acquisition and sort on InstanceNumber
-        SopInstanceList = [x for x in series['SOPInstanceDict'].values() if x['AcquisitionNumber'] == AcquisitionNumber]
-        # get list of InstanceNumber values and check it is consistent
+        # Get SopInstances from this Acquisition
+        SopInstanceList = [x for x in self.seriesData['SOPInstanceDict'].values() if x['AcquisitionNumber'] == AcquisitionNumber]
+
+        # Get list of InstanceNumbers and check values are contiguous
         InstanceNumberList = [x['InstanceNumber'] for x in SopInstanceList]
         if len(InstanceNumberList) != len(set(InstanceNumberList)) or min(InstanceNumberList) != 1 or max(InstanceNumberList) != len(set(InstanceNumberList)):
-            print('InstanceNumber values are not consequtive in for AcquisitionNumber ' + str(AcquisitionNumber))
-            return None
+            raise Exception('InstanceNumber values are not consecutive for AcquisitionNumber = ' + str(AcquisitionNumber))
+
+        # Sort on InstanceNumber
         SopInstanceList = [x for _, x in sorted(zip(InstanceNumberList, SopInstanceList))]
 
-        # put data into image and mask arrays
-        image = np.zeros((len(SopInstanceList), series['Columns'], series['Rows']))
-        mask = np.zeros((len(SopInstanceList), series['Columns'], series['Rows'])).astype(bool)
+        # Copy image data and make mask
+        image = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows']))
+        mask = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows'])).astype(bool)
         for n, sopInst in enumerate(SopInstanceList):
             image[n,:,:] = sopInst['PixelData']
             for contour in sopInst['ContourList']:
                 if contour['ROIName'] == ROIName:
                     mask[n,:,:] = np.logical_or(mask[n,:,:], contour['Mask'])
 
-
         return image, mask
 
 
-    def loadDicomSeries(seriesUID, folder, maxSpatiallyNonCompatibleInstances=0):
+    def __loadImageSeries(self):
 
-        # output variable to store image and metadata for this series
         series = {}
         series['SOPInstanceDict'] = {}
 
-        sopInstanceCount = 0
-        for file in glob.glob(os.path.join(folder, '**'), recursive=True):
+        files = glob.glob(os.path.join(self.seriesFolderDict[self.ReferencedSeriesUID], '**'), recursive=True)
+        for file in files:
             if not os.path.isdir(file) and pydicom.misc.is_dicom(file):
 
                 dcm = pydicom.dcmread(file)
 
-                if dcm.SeriesInstanceUID == seriesUID:
-                    sopInstanceCount += 1
-                else:
+                if dcm.SeriesInstanceUID != self.ReferencedSeriesUID:
                     continue
 
                 # keep one dcm for getting tags common to all instances in series
-                if 'dcmKeep' not in locals():
-                    dcmKeep = pydicom.dcmread(file)
+                if 'dcmCommon' not in locals():
+                    dcmCommon = pydicom.dcmread(file)
 
                 thisSopInst = {}
-                thisSopInst['PixelData'] = __getScaledSlice(dcm)
+                thisSopInst['PixelData'] = self.__getScaledSlice(dcm)
                 thisSopInst['InstanceNumber'] = int(dcm.InstanceNumber)
                 if hasattr(dcm, 'AcquisitionNumber'):
                     thisSopInst['AcquisitionNumber'] = int(dcm.AcquisitionNumber)
@@ -182,23 +156,18 @@ class dataLoader:
 
                 series['SOPInstanceDict'][dcm.SOPInstanceUID] = thisSopInst
 
-        if sopInstanceCount==0:
-            print('loadDicomSeries() error: SeriesInstanceUID ' + seriesUID + ' not found in folder ' + folder)
-            return None
+        if 'dcmCommon' not in locals():
+            raise Exception('SeriesInstanceUID ' + seriesUID + ' not found in folder ' + folder)
 
         # extract metadata that should be common to all instances in series
-        if 'dcmKeep' in locals():
-            series['SeriesInstanceUID'] = dcmKeep.SeriesInstanceUID
-            series['StudyInstanceUID'] = dcmKeep.StudyInstanceUID
-            series['PatientID'] = dcmKeep.PatientID
-        else:
-            print('loadDicomSeries() error - problem reading dicom files!')
-            return None
+        series['SeriesInstanceUID'] = dcmCommon.SeriesInstanceUID
+        series['StudyInstanceUID'] = dcmCommon.StudyInstanceUID
+        series['PatientID'] = dcmCommon.PatientID
 
         # get any Modality-specific parameters that might be useful
         sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
         sopClassUid_MRImageStorage = '1.2.840.10008.5.1.4.1.1.4'
-        if dcm.SOPClassUID == sopClassUid_CTImageStorage:
+        if dcmCommon.SOPClassUID == sopClassUid_CTImageStorage:
             parameterList = ['KVP',
                              'XRayTubeCurrent',
                              'ConvolutionKernel',
@@ -209,54 +178,44 @@ class dataLoader:
                              'ContrastBolusVolume',
                              'PatientWeight']
             for parameter in parameterList:
-                if hasattr(dcm, parameter):
-                    series[parameter] = getattr(dcm, parameter)
+                if hasattr(dcmCommon, parameter):
+                    series[parameter] = getattr(dcmCommon, parameter)
                 else:
                     series[parameter] = None
 
-        # use listed tags to check if there are any non-matching sopInstances, and get list of these if there are fewer than maxSpatiallyNonCompatibleInstances
-        tagsToMatch = ['Columns', 'Rows', 'ImageOrientationPatient', 'PixelSpacing', 'SliceThickness']
-        sopInstDiscard = __getListOfNonMatchingSopInstancesToDiscard(series['SOPInstanceDict'], tagsToMatch, maxSpatiallyNonCompatibleInstances)
-
-        # this is an error state that occurs if there are too many non-matching sopInstances
-        if sopInstDiscard is None:
-            print('\nloadDicomSeries() found images with more than one Orientation/Pixel spacing in series ' + seriesUID + ' ' + folder + '\n')
-            return None
-
-        # remove unwanted sopInstances
-        for sop in sopInstDiscard:
+        # Remove non-matching sopInstances (limited to groups that are smaller than self.maxNonCompatibleInstances)
+        for sop in self.__getNonMatchingSopInstances(series['SOPInstanceDict']):
             series['SOPInstanceDict'].pop(sop, None)
 
-        # check that the collection of sopInstances is now compatible
-        sopInstDiscard = __getListOfNonMatchingSopInstancesToDiscard(series['SOPInstanceDict'], tagsToMatch, maxSpatiallyNonCompatibleInstances)
+        # Double check that the collection of sopInstances is now compatible
+        sopInstDiscard = self.__getNonMatchingSopInstances(series['SOPInstanceDict'])
         if len(sopInstDiscard)>0:
-            print('\nloadDicomSeries() found images with more than one Orientation/Pixel spacing in series ' + seriesUID + ' ' + folder + '\n')
-            return None
+            raise Exception('Series has SOPInstance(s) with non-compatible metadata')
 
-        # move the tags that match to the top level of the series dictionary
-        for tag in tagsToMatch:
+        # Move the tags that do match to the top level of the series dictionary
+        for tag in self.tagsToMatch:
             series[tag] = series['SOPInstanceDict'][next(iter(series['SOPInstanceDict']))][tag]
 
-        # delete tags from each sopInstance
+        # Delete the tags from each sopInstance
         for k, v in series['SOPInstanceDict'].items():
-            for tag in tagsToMatch:
+            for tag in self.tagsToMatch:
                 v.pop(tag)
             v['ContourList'] = []
             v['MaskList'] = []
 
-        return series
+        self.seriesData = series
 
 
-    def readRTSdata(rts, series):
+    def __loadRTSdata(self):
 
         roiNameDict = {}
         roiNames = []
-        for ssr in rts.StructureSetROISequence:
+        for ssr in self.assessor.StructureSetROISequence:
             roiNameDict[ssr.ROINumber] = ssr.ROIName
             roiNames.append(ssr.ROIName)
-        series['ROINames'] = roiNames
+        self.seriesData['ROINames'] = roiNames
 
-        for rcs in rts.ROIContourSequence:
+        for rcs in self.assessor.ROIContourSequence:
             for cs in rcs.ContourSequence:
 
                 # extract information from ContourSequence items
@@ -267,10 +226,10 @@ class dataLoader:
                                'ROINumber':rcs.ReferencedROINumber}
 
                 # get referenced SopInstance item from series
-                thisSopInstance = series['SOPInstanceDict'][cs.ContourImageSequence[0].ReferencedSOPInstanceUID]
+                thisSopInstance = self.seriesData['SOPInstanceDict'][cs.ContourImageSequence[0].ReferencedSOPInstanceUID]
 
                 # process contour data to get contour pixel coordinates, contour area and the mask
-                colCoord, rowCoord, contourArea, mask = __processContour(cs.ContourData, thisSopInstance, series)
+                colCoord, rowCoord, contourArea, mask = self.__processContour(cs.ContourData, thisSopInstance)
                 thisContour['ColumnPixelCoordinates'] = colCoord
                 thisContour['RowPixelCoordinates'] = rowCoord
                 thisContour['ContourArea'] = contourArea
@@ -278,4 +237,36 @@ class dataLoader:
 
                 thisSopInstance['ContourList'].append(thisContour)
 
-        return series
+
+    def __processContour(self, contourData, sopInstance, roiShift={'row':0, 'col':0}):
+
+        # Process contour data to get contour in pixel coordinates and as a mask.
+        #
+        # Also get the contour area (in mm^2) so we can detect and remove contours that are too small, in particular
+        # we occasionally get contours that only consist of a single point.
+
+        coords = np.array([float(x) for x in contourData])
+        polygonPatient = coords.reshape((int(len(coords) / 3), 3))
+
+        # https://en.wikipedia.org/wiki/Shoelace_formula
+        # this formula should work for planar polygon with arbitrary orientation
+        crossSum = np.sum(np.cross(polygonPatient[0:-2, :], polygonPatient[1:-1, :]), axis=0)
+        crossSum += np.cross(polygonPatient[-1, :], polygonPatient[0, :])
+        contourArea = 0.5 * np.linalg.norm(crossSum)
+
+        # Transform contour to pixel coordinates
+        origin = np.reshape(sopInstance['ImagePositionPatient'], (1,3))
+        spacing = self.seriesData['PixelSpacing']
+        colNorm = np.reshape(self.seriesData['ImageOrientationPatient'][0:3], (3,1))
+        rowNorm = np.reshape(self.seriesData['ImageOrientationPatient'][3:6], (3,1))
+        colPixCoord = np.dot(polygonPatient - origin, colNorm) / spacing[0]
+        rowPixCoord = np.dot(polygonPatient - origin, rowNorm) / spacing[1]
+
+        # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
+        # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
+        # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+        mask = np.zeros((self.seriesData['Rows'], self.seriesData['Columns'])).astype(bool)
+        fill_row_coords, fill_col_coords = draw.polygon(rowPixCoord + roiShift['row'], colPixCoord + roiShift['col'], (self.seriesData['Columns'], self.seriesData['Rows']))
+        mask[fill_row_coords, fill_col_coords] = True
+
+        return colPixCoord, rowPixCoord, contourArea, mask
