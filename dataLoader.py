@@ -1,13 +1,18 @@
 import os, glob, pydicom
 import numpy as np
 from skimage import draw
+import SimpleITK as sitk
 
 class dataLoader:
 
-    def __init__(self, assessorFile, seriesFolderDict, maxNonCompatibleInstances=0):
+    def __init__(self, assessorFile, seriesFolderDict, maxNonCompatibleInstances=0, verbose=False, roiShift={'row':0, 'col':0}):
+
+        if verbose:
+            print('Processing ' + assessorFile)
 
         self.assessorFile = assessorFile
         self.seriesFolderDict = seriesFolderDict
+        self.roiShift = roiShift
 
         # This is a list of dicom tags that are checked to see if they match for all sopInstances in the series
         self.tagsToMatch = ['Columns', 'Rows', 'ImageOrientationPatient', 'PixelSpacing', 'SliceThickness']
@@ -19,13 +24,23 @@ class dataLoader:
         self.assessor = pydicom.dcmread(assessorFile)
         self.ReferencedSeriesUID = self.__getReferencedSeriesUID()
 
-        self.seriesData = None
+        self.seriesData = {}
+        if verbose:
+            print('Loading images ...', end=' ')
+
         self.__loadImageSeries()
+
+        if verbose:
+            print('loading contours ...', end=' ')
 
         self.__loadRTSdata()
 
+        if verbose:
+            print('complete.')
+
 
     def __getReferencedSeriesUID(self):
+
         rfors = self.assessor.ReferencedFrameOfReferenceSequence[0]
         rtrss = rfors.RTReferencedStudySequence[0]
         return rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
@@ -75,7 +90,9 @@ class dataLoader:
 
 
 
-    def getNamedROI(self, ROIName):
+    def getNamedROI(self, ROIName, minContourArea=0, checkMaskPresentOnContiguousSlices=True):
+
+        output = {'ROIName':ROIName}
 
         if ROIName not in self.seriesData['ROINames']:
             raise Exception(ROIName + ' not found!')
@@ -103,16 +120,61 @@ class dataLoader:
         # Sort on InstanceNumber
         SopInstanceList = [x for _, x in sorted(zip(InstanceNumberList, SopInstanceList))]
 
+        # Check SliceLocations are uniformly spaced (to a tolerance)
+        SliceLocationList = [x['SliceLocation'] for x in SopInstanceList]
+        SliceSpacing = np.diff(SliceLocationList)
+        if np.std(SliceSpacing) / np.abs(np.mean(SliceSpacing)) > 1e-4:
+            raise Exception('Non uniform slice spacing')
+
         # Copy image data and make mask
         image = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows']))
         mask = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows'])).astype(bool)
+        output['numberSmallContoursRemoved'] = 0
         for n, sopInst in enumerate(SopInstanceList):
             image[n,:,:] = sopInst['PixelData']
             for contour in sopInst['ContourList']:
                 if contour['ROIName'] == ROIName:
-                    mask[n,:,:] = np.logical_or(mask[n,:,:], contour['Mask'])
+                    if contour['ContourArea']>minContourArea:
+                        mask[n,:,:] = np.logical_or(mask[n,:,:], contour['Mask'])
+                    else:
+                        output['numberSmallContoursRemoved'] += 1
 
-        return image, mask
+        if checkMaskPresentOnContiguousSlices:
+            maskSliceInds = np.unique(np.where(np.sum(mask, axis=(1,2))>0)[0])
+            maskSliceIndsDiff = np.unique(np.diff(maskSliceInds))
+            if len(maskSliceIndsDiff) == 1 and maskSliceIndsDiff[0] == 1:
+                output['maskContiguous'] = True
+            else:
+                output['maskContiguous'] = False
+        else:
+            output['maskContiguous'] = None
+
+        # pyradiomics likes the mask and image to be SimpleITK image objects, but converting to these is slow
+        #
+        # Therefore, output includes all the metadata needed to construct the sitk objects, which we do at the point
+        # where pyradiomics is invoked.  This means that manipulating the masks (e.g. dilating, combining masks etc.) is easier also
+
+        output['mask'] = {}
+        output['mask']['array'] = mask
+        output['mask']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
+        output['mask']['spacing'] = (self.seriesData['PixelSpacing'][0], self.seriesData['PixelSpacing'][1], SliceSpacing[0])
+        rowVec = self.seriesData['ImageOrientationPatient'][0:3]
+        colVec = self.seriesData['ImageOrientationPatient'][3:6]
+        output['mask']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
+
+        output['image'] = {}
+        output['image']['array'] = image
+        output['image']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
+        output['image']['spacing'] = (self.seriesData['PixelSpacing'][0], self.seriesData['PixelSpacing'][1], SliceSpacing[0])
+        output['image']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
+
+        # template code to convert to sitk image object
+        # imageSitk = sitk.GetImageFromArray(output['image']['array'])
+        # imageSitk.SetOrigin(output['image']['origin'])
+        # imageSitk.SetSpacing(output['image']['spacing'])
+        # imageSitk.SetDirection(output['image']['direction'])
+
+        return output
 
 
     def __loadImageSeries(self):
@@ -153,6 +215,13 @@ class dataLoader:
                     thisSopInst['SliceThickness'] = float(dcm.SliceThickness)
                 else:
                     thisSopInst['SliceThickness'] = 0.0
+
+                # Get SliceLocation directly from ImagePositionPatient and ImageOrientationPatient
+                # This is because the SliceLocation dicom tag is sometimes dodgy
+                origin = thisSopInst['ImagePositionPatient']
+                rowVec = thisSopInst['ImageOrientationPatient'][0:3]
+                colVec = thisSopInst['ImageOrientationPatient'][3:6]
+                thisSopInst['SliceLocation'] = np.dot(origin, np.cross(rowVec, colVec))
 
                 series['SOPInstanceDict'][dcm.SOPInstanceUID] = thisSopInst
 
@@ -238,7 +307,7 @@ class dataLoader:
                 thisSopInstance['ContourList'].append(thisContour)
 
 
-    def __processContour(self, contourData, sopInstance, roiShift={'row':0, 'col':0}):
+    def __processContour(self, contourData, sopInstance):
 
         # Process contour data to get contour in pixel coordinates and as a mask.
         #
@@ -257,16 +326,14 @@ class dataLoader:
         # Transform contour to pixel coordinates
         origin = np.reshape(sopInstance['ImagePositionPatient'], (1,3))
         spacing = self.seriesData['PixelSpacing']
-        colNorm = np.reshape(self.seriesData['ImageOrientationPatient'][0:3], (3,1))
-        rowNorm = np.reshape(self.seriesData['ImageOrientationPatient'][3:6], (3,1))
-        colPixCoord = np.dot(polygonPatient - origin, colNorm) / spacing[0]
-        rowPixCoord = np.dot(polygonPatient - origin, rowNorm) / spacing[1]
+        rowVec = np.reshape(self.seriesData['ImageOrientationPatient'][0:3], (3,1))
+        colVec = np.reshape(self.seriesData['ImageOrientationPatient'][3:6], (3,1))
+        rowPixCoord = np.dot(polygonPatient - origin, rowVec) / spacing[1]
+        colPixCoord = np.dot(polygonPatient - origin, colVec) / spacing[0]
 
-        # according to https://scikit-image.org/docs/stable/api/skimage.draw.html?highlight=skimage%20draw#module-skimage.draw
-        # there is a function polygon2mask, but this doesn't seem to be actually present in the library I have.
-        # Since draw.polygon2mask is just a wrapper for draw.polygon I'm using the simpler function directly here.
+        # get mask from contour
         mask = np.zeros((self.seriesData['Rows'], self.seriesData['Columns'])).astype(bool)
-        fill_row_coords, fill_col_coords = draw.polygon(rowPixCoord + roiShift['row'], colPixCoord + roiShift['col'], (self.seriesData['Columns'], self.seriesData['Rows']))
+        fill_row_coords, fill_col_coords = draw.polygon(colPixCoord + self.roiShift['col'], rowPixCoord + self.roiShift['row'], (self.seriesData['Columns'], self.seriesData['Rows']))
         mask[fill_row_coords, fill_col_coords] = True
 
         return colPixCoord, rowPixCoord, contourArea, mask
