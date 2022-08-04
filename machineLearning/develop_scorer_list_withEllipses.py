@@ -69,15 +69,32 @@ n_splits = 10
 n_repeats = 10
 cv_split = RepeatedStratifiedKFold(n_splits=n_splits,  n_repeats=n_repeats)
 cv = cross_validate(clf, X, y, scoring=scorers, cv=cv_split, return_estimator=True)
+pred = cross_val_predict(clf, X, y, cv=KFold(n_splits=n_splits), method='predict_proba')
 
 # Process results of cross-validation to extract the dca curves for each data split
-dca_cv = {float(k.replace('test_DCA_','')):np.mean(v) for k, v in cv.items() if 'DCA' in k}
-roc_x_cv = {float(k.replace('test_ROC_x_','')):np.mean(v) for k, v in cv.items() if 'ROC_x' in k}
-roc_y_cv = {float(k.replace('test_ROC_y_','')):np.mean(v) for k, v in cv.items() if 'ROC_y' in k}
+dca_cv = np.array([])
+pt_cv = np.array([])
+roc_cv_x = np.array([])
+roc_cv_y = np.array([])
+for k, v in cv.items():
+    if 'DCA_' in k:
+        ptHere = float(k.replace('test_DCA_', ''))
+        pt_cv = np.append(pt_cv, ptHere*np.ones(len(v)))
+        dca_cv = np.append(dca_cv, v)
+
+    if 'ROC_x_' in k:
+        roc_cv_x = np.append(roc_cv_x, v)
+
+    if 'ROC_y_' in k:
+        roc_cv_y = np.append(roc_cv_y, v)
+
+roc_cv_x = np.reshape(roc_cv_x, (len(ptArr), n_splits*n_repeats))
+roc_cv_y = np.reshape(roc_cv_y, (len(ptArr), n_splits*n_repeats))
 
 # main plots
 plt.plot(ptArr, netBenefit, label='Resub')
-plt.plot(list(dca_cv.keys()), list(dca_cv.values()), label='CV')
+snsData = pd.DataFrame({'Probability threshold':pt_cv, 'Net benefit':dca_cv})
+sns.lineplot(data=snsData, x='Probability threshold', y='Net benefit', ci='none', label='CV')
 ylim = plt.gca().get_ylim()
 
 # treat all and treat none
@@ -90,9 +107,74 @@ plt.legend(loc=3)
 plt.title('AUROC = ' + str(np.round(np.mean(cv['test_roc_auc']),3)))
 
 plt.show()
+#plt.savefig('/Users/morton/Desktop/DCA_CV.pdf',  orientation='landscape', format='pdf')
 
-# CV ROC plot
 fpr, tpr, _ = roc_curve(y, clf.predict_proba(X)[:,1])
 plt.plot(fpr, tpr)
-plt.plot(list(roc_x_cv.values()), list(roc_y_cv.values()))
+plt.plot(np.mean(roc_cv_x, axis=1), np.mean(roc_cv_y, axis=1))
+plt.show()
+
+from matplotlib.patches import Ellipse
+import matplotlib.transforms as transforms
+
+def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
+    """
+    Create a plot of the covariance confidence ellipse of `x` and `y`
+
+    Parameters
+    ----------
+    x, y : array_like, shape (n, )
+        Input data.
+
+    ax : matplotlib.axes.Axes
+        The axes object to draw the ellipse into.
+
+    n_std : float
+        The number of standard deviations to determine the ellipse's radiuses.
+
+    Returns
+    -------
+    matplotlib.patches.Ellipse
+
+    Other parameters
+    ----------------
+    kwargs : `~matplotlib.patches.Patch` properties
+    """
+    if x.size != y.size:
+        raise ValueError("x and y must be the same size")
+
+    cov = np.cov(x, y)
+    pearson = cov[0, 1]/np.sqrt(cov[0, 0] * cov[1, 1])
+    # Using a special case to obtain the eigenvalues of this
+    # two-dimensionl dataset.
+    ell_radius_x = np.sqrt(1 + pearson)
+    ell_radius_y = np.sqrt(1 - pearson)
+    ellipse = Ellipse((0, 0),
+        width=ell_radius_x * 2,
+        height=ell_radius_y * 2,
+        facecolor=facecolor,
+        **kwargs)
+
+    # Calculating the stdandard deviation of x from
+    # the squareroot of the variance and multiplying
+    # with the given number of standard deviations.
+    scale_x = np.sqrt(cov[0, 0]) * n_std
+    mean_x = np.mean(x)
+
+    # calculating the stdandard deviation of y ...
+    scale_y = np.sqrt(cov[1, 1]) * n_std
+    mean_y = np.mean(y)
+
+    transf = transforms.Affine2D() \
+        .rotate_deg(45) \
+        .scale(scale_x, scale_y) \
+        .translate(mean_x, mean_y)
+
+    ellipse.set_transform(transf + ax.transData)
+    return ax.add_patch(ellipse)
+
+fig, ax = plt.subplots(figsize=(6, 6))
+for n in range(len(ptArr)):
+    confidence_ellipse(roc_cv_x[n,:], roc_cv_y[n,:], ax, n_std=0.5, alpha=0.2, facecolor='pink', edgecolor='none')
+plt.plot(np.mean(roc_cv_x, axis=1), np.mean(roc_cv_y, axis=1))
 plt.show()
