@@ -75,7 +75,7 @@ class dataLoader:
         # Find number of sopInstances with each unique hash, where the number of instances is above self.maxNonCompatibleInstances
         hashMetaKeep = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) > self.maxNonCompatibleInstances]
         if len(hashMetaKeep)>1:
-            raise Exception('More than one set of compatible SOPInstances found')
+            raise Exception(str(len(hashMetaKeep)) + ' sets of compatible SOPInstances found!')
 
         # Get hash values that have fewer than maxSpatiallyNonCompatibleInstances instances and can therefore be discarded
         hashMetaUniqueDiscard = [x for x in hashMetaUnique if list(hashMeta.values()).count(x) <= self.maxNonCompatibleInstances]
@@ -90,7 +90,7 @@ class dataLoader:
 
 
 
-    def getNamedROI(self, ROIName, minContourArea=0, checkMaskPresentOnContiguousSlices=True):
+    def getNamedROI(self, ROIName, minContourArea=0, checkMaskPresentOnContiguousSlices=True, sliceSpacingUniformityThreshold=1e-4):
 
         output = {'ROIName':ROIName}
 
@@ -113,18 +113,21 @@ class dataLoader:
         SopInstanceList = [x for x in self.seriesData['SOPInstanceDict'].values() if x['AcquisitionNumber'] == AcquisitionNumber]
 
         # Get list of InstanceNumbers and check values are contiguous
-        InstanceNumberList = [x['InstanceNumber'] for x in SopInstanceList]
-        if len(InstanceNumberList) != len(set(InstanceNumberList)) or min(InstanceNumberList) != 1 or max(InstanceNumberList) != len(set(InstanceNumberList)):
+        InstanceNumbers = [x['InstanceNumber'] for x in SopInstanceList]
+        instanceListSteps = np.unique(np.diff(np.sort(np.array(InstanceNumbers))))
+        if len(instanceListSteps) != 1 or instanceListSteps[0] != 1:
             raise Exception('InstanceNumber values are not consecutive for AcquisitionNumber = ' + str(AcquisitionNumber))
 
         # Sort on InstanceNumber
-        SopInstanceList = [x for _, x in sorted(zip(InstanceNumberList, SopInstanceList))]
+        SopInstanceList = [x for _, x in sorted(zip(InstanceNumbers, SopInstanceList))]
+        InstanceNumbers.sort()
 
         # Check SliceLocations are uniformly spaced (to a tolerance)
         SliceLocationList = [x['SliceLocation'] for x in SopInstanceList]
         SliceSpacing = np.diff(SliceLocationList)
-        if np.std(SliceSpacing) / np.abs(np.mean(SliceSpacing)) > 1e-4:
-            raise Exception('Non uniform slice spacing')
+        sliceRatioCheck = np.std(SliceSpacing) / np.abs(np.mean(SliceSpacing))
+        if sliceRatioCheck > sliceSpacingUniformityThreshold:
+            raise Exception('Non uniform slice spacing: slice ratio = ' + str(sliceRatioCheck))
 
         # Copy image data and make mask
         image = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows']))
@@ -142,7 +145,7 @@ class dataLoader:
         if checkMaskPresentOnContiguousSlices:
             maskSliceInds = np.unique(np.where(np.sum(mask, axis=(1,2))>0)[0])
             maskSliceIndsDiff = np.unique(np.diff(maskSliceInds))
-            if len(maskSliceIndsDiff) == 1 and maskSliceIndsDiff[0] == 1:
+            if len(maskSliceInds)==1 or (len(maskSliceIndsDiff) == 1 and maskSliceIndsDiff[0] == 1):
                 output['maskContiguous'] = True
             else:
                 output['maskContiguous'] = False
@@ -167,6 +170,7 @@ class dataLoader:
         output['image']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
         output['image']['spacing'] = (self.seriesData['PixelSpacing'][0], self.seriesData['PixelSpacing'][1], SliceSpacing[0])
         output['image']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
+        output['image']['InstanceNumbers'] = InstanceNumbers
 
         # template code to convert to sitk image object
         # imageSitk = sitk.GetImageFromArray(output['image']['array'])
@@ -198,11 +202,11 @@ class dataLoader:
                 thisSopInst = {}
                 thisSopInst['PixelData'] = self.__getScaledSlice(dcm)
                 thisSopInst['InstanceNumber'] = int(dcm.InstanceNumber)
-                if hasattr(dcm, 'AcquisitionNumber'):
+                if hasattr(dcm, 'AcquisitionNumber') and dcm.AcquisitionNumber != '':
                     thisSopInst['AcquisitionNumber'] = int(dcm.AcquisitionNumber)
                 else:
                     thisSopInst['AcquisitionNumber'] = 0
-                if hasattr(dcm, 'SliceLocation'):
+                if hasattr(dcm, 'SliceLocation') and dcm.SliceLocation != '':
                     thisSopInst['SliceLocation'] = float(dcm.SliceLocation)
                 else:
                     thisSopInst['SliceLocation'] = 0.0
@@ -211,8 +215,8 @@ class dataLoader:
                 thisSopInst['PixelSpacing'] = np.array([float(x) for x in dcm.data_element('PixelSpacing')])
                 thisSopInst['Rows'] = int(dcm.Rows)
                 thisSopInst['Columns'] = int(dcm.Columns)
-                if hasattr(dcm, 'SliceThickness'):
-                    thisSopInst['SliceThickness'] = float(dcm.SliceThickness)
+                if hasattr(dcm, 'SliceThickness') and dcm.SliceThickness != '':
+                        thisSopInst['SliceThickness'] = float(dcm.SliceThickness)
                 else:
                     thisSopInst['SliceThickness'] = 0.0
 
@@ -252,14 +256,19 @@ class dataLoader:
                 else:
                     series[parameter] = None
 
-        # Remove non-matching sopInstances (limited to groups that are smaller than self.maxNonCompatibleInstances)
-        for sop in self.__getNonMatchingSopInstances(series['SOPInstanceDict']):
-            series['SOPInstanceDict'].pop(sop, None)
+        # For each Acquisition remove non-matching sopInstances (limited to groups that are smaller than self.maxNonCompatibleInstances)
+        AcquisitionNumbers = list(set([x['AcquisitionNumber'] for x in series['SOPInstanceDict'].values()]))
+        for AcquisitionNumber in AcquisitionNumbers:
 
-        # Double check that the collection of sopInstances is now compatible
-        sopInstDiscard = self.__getNonMatchingSopInstances(series['SOPInstanceDict'])
-        if len(sopInstDiscard)>0:
-            raise Exception('Series has SOPInstance(s) with non-compatible metadata')
+            thisAcquisition = {key: value for key, value in series['SOPInstanceDict'].items() if value['AcquisitionNumber'] == AcquisitionNumber}
+            for sop in self.__getNonMatchingSopInstances(thisAcquisition):
+                series['SOPInstanceDict'].pop(sop, None)
+
+            # Double check that the collection of sopInstances is now compatible
+            thisAcquisition = {key: value for key, value in series['SOPInstanceDict'].items() if value['AcquisitionNumber'] == AcquisitionNumber}
+            sopInstDiscard = self.__getNonMatchingSopInstances(thisAcquisition)
+            if len(sopInstDiscard)>0:
+                raise Exception('Series has SOPInstance(s) with non-compatible metadata')
 
         # Move the tags that do match to the top level of the series dictionary
         for tag in self.tagsToMatch:
