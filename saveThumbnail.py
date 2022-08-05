@@ -78,7 +78,6 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
                         pp = np.round(pp - 0.5) + 0.5
                         # linewidth scales to the number of plots and the number of pixels in each plot
                         ax.plot(pp[:, 0], pp[:, 1], colors[k], linewidth=150/np.sqrt(nPlt)/imageVolumeCrop.shape[1])
-                        #ax.scatter(pp[:, 0], pp[:, 1], marker='.', s=np.square(np.square(150 / np.sqrt(nPlt) / imageVolumeCrop.shape[1])))
 
     # legend goes on last axes that shouldn't have any images in it
     for k, roi in enumerate(roiList):
@@ -90,6 +89,6 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
     if not os.path.exists(os.path.split(outputFileName)[0]):
         os.makedirs(os.path.split(outputFileName)[0])
 
-    fPlt.savefig(outputFileName,  orientation='landscape', format=format, dpi=1200)
+    fPlt.savefig(outputFileName,  orientation='landscape', format=format, dpi=2400)
 
     plt.close('all')
