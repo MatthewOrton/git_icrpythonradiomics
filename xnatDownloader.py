@@ -414,7 +414,9 @@ class xnatDownloader:
             newFolderScans = os.listdir(os.path.join(newFolder, 'scans'))
             currentFolderScans = os.listdir(os.path.join(currentFolder, 'scans'))
             if len(set(currentFolderScans).intersection(set(newFolderScans))) != 0:
-                raise Exception("Scan already downloaded!")
+                # tidy up
+                rmtree(currentFolder)
+                raise Exception("Scan already downloaded!\n")
             for folder in currentFolderScans:
                 os.rename(os.path.join(currentFolder, 'scans', folder), os.path.join(newFolder, 'scans', folder))
             # tidy up
