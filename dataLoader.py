@@ -89,7 +89,7 @@ class dataLoader:
 
 
 
-    def getNamedROI(self, ROIName, minContourArea=0, checkMaskPresentOnContiguousSlices=True, sliceSpacingUniformityThreshold=1e-4):
+    def getNamedROI(self, ROIName, minContourArea=0, checkMaskPresentOnContiguousSlices=True, sliceSpacingUniformityThreshold=1e-4, contiguousInstanceNumberCheck=True):
 
         output = {'ROIName':ROIName}
 
@@ -114,7 +114,7 @@ class dataLoader:
         # Get list of InstanceNumbers and check values are contiguous
         InstanceNumbers = [x['InstanceNumber'] for x in SopInstanceList]
         instanceListSteps = np.unique(np.diff(np.sort(np.array(InstanceNumbers))))
-        if len(instanceListSteps) != 1 or instanceListSteps[0] != 1:
+        if contiguousInstanceNumberCheck and (len(instanceListSteps) != 1 or instanceListSteps[0] != 1):
             raise Exception('InstanceNumber values are not consecutive for AcquisitionNumber = ' + str(AcquisitionNumber))
 
         # Sort on InstanceNumber
@@ -129,8 +129,8 @@ class dataLoader:
             raise Exception('Non uniform slice spacing: slice ratio = ' + str(sliceRatioCheck))
 
         # Copy image data and make mask
-        image = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows']))
-        mask = np.zeros((len(SopInstanceList), self.seriesData['Columns'], self.seriesData['Rows'])).astype(bool)
+        image = np.zeros((len(SopInstanceList), self.seriesData['Rows'], self.seriesData['Columns']))
+        mask = np.zeros((len(SopInstanceList), self.seriesData['Rows'], self.seriesData['Columns'])).astype(bool)
         output['numberSmallContoursRemoved'] = 0
         for n, sopInst in enumerate(SopInstanceList):
             image[n,:,:] = sopInst['PixelData']
