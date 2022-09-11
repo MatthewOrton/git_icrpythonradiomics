@@ -87,6 +87,8 @@ class radiomicAnalyser:
             # is only used in the sitk objects to make sure the mask and images are compatible
             dz = float(1.0)
 
+        self.sliceGap = abs(dz)
+
         maskSitk = sitk.GetImageFromArray(self.mask)
         maskSitk.SetOrigin(tuple(self.imageData["imagePositionPatient"][0]))
         maskSitk.SetSpacing((self.imageData["pixelSpacing"][0], self.imageData["pixelSpacing"][1], abs(dz)))
@@ -1501,6 +1503,9 @@ class radiomicAnalyser:
 
         headers.append("source_DCM_StudyTime")
         row.append(self.StudyTime)
+
+        headers.append("source_DCM_sliceGap_dz")
+        row.append(self.sliceGap)
 
         # mark some columns with string "QueryConfounder" then we can use this later in an automatic
         # check to filter these columns and check if there are any unwanted correlations/clusterings
