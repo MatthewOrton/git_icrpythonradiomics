@@ -1,7 +1,6 @@
 import os, glob, pydicom
 import numpy as np
 from skimage import draw
-import SimpleITK as sitk
 
 class dataLoader:
 
