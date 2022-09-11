@@ -7,7 +7,7 @@ import pickle
 # save file and recompute if necessary
 # if sopClassUid is input then it will also output a list of sopInstances that match this sopClassUid
 
-def getSopInstDict(path, ignoreInstanceNumberClash=False):
+def getSopInstDict(path, ignoreInstanceNumberClash=False, reload=False):
 
     sopInstDict = {}
     sopInst2instanceNumberDict = {}
@@ -31,7 +31,7 @@ def getSopInstDict(path, ignoreInstanceNumberClash=False):
     if 'AcquisitionNumberForChecking' not in locals():
         AcquisitionNumberForChecking = {}
 
-    if len(files)>0:
+    if reload or len(files)>0:
         print('Updating SOPInstanceUID dictionary:')
         with progressbar.ProgressBar(max_value=len(files)) as bar:
             for n, imageFile in enumerate(files):
