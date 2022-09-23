@@ -73,7 +73,7 @@ class radiomicAnalyser:
     ##########################
     # featureKeyPrefixStr can be used to add a prefix to the feature keys in order to manually identify features that have
     # been computed in a particular way.  E.g. when permuting the voxels I use 'permuted_' as a prefix
-    def computeRadiomicFeatures(self, binWidthOverRide=None, binCountOverRide=None, binEdgesOverRide=None, gldm_aOverRide=None, distancesOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
+    def computeRadiomicFeatures(self, imageThresholds=None, binWidthOverRide=None, binCountOverRide=None, binEdgesOverRide=None, gldm_aOverRide=None, distancesOverRide=None, resampledPixelSpacing=None, computeEntropyOfCounts=False, featureKeyPrefixStr=''):
 
         # get slice gap
         zLoc = sorted([x[2] for x in self.imageData["imagePositionPatient"]])
@@ -94,7 +94,13 @@ class radiomicAnalyser:
         maskSitk.SetSpacing((self.imageData["pixelSpacing"][0], self.imageData["pixelSpacing"][1], abs(dz)))
         maskSitk.SetDirection((1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, float(np.sign(dz))))
 
-        imageSitk = sitk.GetImageFromArray(self.imageData["imageVolume"])
+        if imageThresholds is None:
+            imageSitk = sitk.GetImageFromArray(self.imageData["imageVolume"])
+        else:
+            imageData = copy.deepcopy(self.imageData["imageVolume"])
+            imageData[imageData > np.max(imageThresholds)] = np.max(imageThresholds)
+            imageData[imageData < np.min(imageThresholds)] = np.min(imageThresholds)
+            imageSitk = sitk.GetImageFromArray(imageData)
         imageSitk.SetOrigin(maskSitk.GetOrigin())
         imageSitk.SetSpacing(maskSitk.GetSpacing())
         imageSitk.SetDirection(maskSitk.GetDirection())
