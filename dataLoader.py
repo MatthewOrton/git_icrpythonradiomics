@@ -28,6 +28,9 @@ class dataLoader:
             print('Loading images ...', end=' ')
 
         self.__loadImageSeries()
+        if not any(self.seriesData):
+            print('Scan data not found!\n')
+            return
 
         if verbose:
             print('loading contours ...', end=' ')
@@ -128,9 +131,21 @@ class dataLoader:
         if sliceRatioCheck > sliceSpacingUniformityThreshold:
             raise Exception('Non uniform slice spacing: slice ratio = ' + str(sliceRatioCheck))
 
+        # Check other tags are the same for all SOPInstances
+        if any([len(set([x['ImageOrientationPatient'][n] for x in SopInstanceList]))!=1 for n in range(6)]):
+            raise Exception('SopInstances with non-matching ImageOrientationPatient')
+        if len(set([x['PixelSpacing'][0] for x in SopInstanceList])) != 1 or len(set([x['PixelSpacing'][1] for x in SopInstanceList])) != 1:
+            raise Exception('SopInstances with non-matching PixelSpacing')
+        if len(set([x['Rows'] for x in SopInstanceList])) != 1:
+            raise Exception('SopInstances with non-matching Rows values')
+        if len(set([x['Columns'] for x in SopInstanceList])) != 1:
+            raise Exception('SopInstances with non-matching Columns values')
+        if len(set([x['SliceThickness'] for x in SopInstanceList])) != 1:
+            raise Exception('SopInstances with non-matching SliceThickness')
+
         # Copy image data and make mask
-        image = np.zeros((len(SopInstanceList), self.seriesData['Rows'], self.seriesData['Columns']))
-        mask = np.zeros((len(SopInstanceList), self.seriesData['Rows'], self.seriesData['Columns'])).astype(bool)
+        image = np.zeros((len(SopInstanceList), SopInstanceList[0]['Rows'], SopInstanceList[0]['Columns']))
+        mask = np.zeros((len(SopInstanceList), SopInstanceList[0]['Rows'], SopInstanceList[0]['Columns'])).astype(bool)
         output['numberSmallContoursRemoved'] = 0
         for n, sopInst in enumerate(SopInstanceList):
             image[n,:,:] = sopInst['PixelData']
@@ -159,17 +174,18 @@ class dataLoader:
         output['mask'] = {}
         output['mask']['array'] = mask
         output['mask']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
-        output['mask']['spacing'] = (self.seriesData['PixelSpacing'][0], self.seriesData['PixelSpacing'][1], SliceSpacing[0])
-        rowVec = self.seriesData['ImageOrientationPatient'][0:3]
-        colVec = self.seriesData['ImageOrientationPatient'][3:6]
+        output['mask']['spacing'] = (SopInstanceList[0]['PixelSpacing'][0], SopInstanceList[0]['PixelSpacing'][1], SliceSpacing[0])
+        rowVec = SopInstanceList[0]['ImageOrientationPatient'][0:3]
+        colVec = SopInstanceList[0]['ImageOrientationPatient'][3:6]
         output['mask']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
 
         output['image'] = {}
         output['image']['array'] = image
         output['image']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
-        output['image']['spacing'] = (self.seriesData['PixelSpacing'][0], self.seriesData['PixelSpacing'][1], SliceSpacing[0])
+        output['image']['spacing'] = (SopInstanceList[0]['PixelSpacing'][0], SopInstanceList[0]['PixelSpacing'][1], SliceSpacing[0])
         output['image']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
         output['image']['InstanceNumbers'] = InstanceNumbers
+        output['image']['Files'] = [x['File'] for x in SopInstanceList]
 
         # template code to convert to sitk image object
         # imageSitk = sitk.GetImageFromArray(output['image']['array'])
@@ -181,6 +197,10 @@ class dataLoader:
 
 
     def __loadImageSeries(self):
+
+        if self.ReferencedSeriesUID not in self.seriesFolderDict:
+            self.seriesData = {}
+            return
 
         series = {}
         series['SOPInstanceDict'] = {}
@@ -199,6 +219,7 @@ class dataLoader:
                     dcmCommon = pydicom.dcmread(file)
 
                 thisSopInst = {}
+                thisSopInst['File'] = file
                 thisSopInst['PixelData'] = self.__getScaledSlice(dcm)
                 thisSopInst['InstanceNumber'] = int(dcm.InstanceNumber)
                 if hasattr(dcm, 'AcquisitionNumber') and dcm.AcquisitionNumber != '':
@@ -225,6 +246,9 @@ class dataLoader:
                 rowVec = thisSopInst['ImageOrientationPatient'][0:3]
                 colVec = thisSopInst['ImageOrientationPatient'][3:6]
                 thisSopInst['SliceLocation'] = np.dot(origin, np.cross(rowVec, colVec))
+
+                # even though SOPInstance used as key, include in value (dictionary) so we can double check matching SOPInstances later
+                thisSopInst['SOPInstanceUID'] = dcm.SOPInstanceUID
 
                 series['SOPInstanceDict'][dcm.SOPInstanceUID] = thisSopInst
 
@@ -269,16 +293,21 @@ class dataLoader:
             if len(sopInstDiscard)>0:
                 raise Exception('Series has SOPInstance(s) with non-compatible metadata')
 
-        # Move the tags that do match to the top level of the series dictionary
-        for tag in self.tagsToMatch:
-            series[tag] = series['SOPInstanceDict'][next(iter(series['SOPInstanceDict']))][tag]
+        # # Move the tags that do match to the top level of the series dictionary
+        # for tag in self.tagsToMatch:
+        #     series[tag] = series['SOPInstanceDict'][next(iter(series['SOPInstanceDict']))][tag]
 
-        # Delete the tags from each sopInstance
+        # # Delete the tags from each sopInstance
+        # for k, v in series['SOPInstanceDict'].items():
+            # for tag in self.tagsToMatch:
+            #     v.pop(tag)
+            # add blank items relating to the RTstruct data that will be filled in with non-empty data in a different function
+
+        # add blank items relating to the RTstruct data that will be filled in with non-empty data in a different function
         for k, v in series['SOPInstanceDict'].items():
-            for tag in self.tagsToMatch:
-                v.pop(tag)
             v['ContourList'] = []
             v['MaskList'] = []
+
 
         self.seriesData = series
 
@@ -311,6 +340,7 @@ class dataLoader:
                 thisContour['RowPixelCoordinates'] = rowCoord
                 thisContour['ContourArea'] = contourArea
                 thisContour['Mask'] = mask
+                thisContour['ReferencedSOPInstanceUID'] = cs.ContourImageSequence[0].ReferencedSOPInstanceUID
 
                 thisSopInstance['ContourList'].append(thisContour)
 
@@ -333,15 +363,15 @@ class dataLoader:
 
         # Transform contour to pixel coordinates
         origin = np.reshape(sopInstance['ImagePositionPatient'], (1,3))
-        spacing = self.seriesData['PixelSpacing']
-        rowVec = np.reshape(self.seriesData['ImageOrientationPatient'][0:3], (3,1))
-        colVec = np.reshape(self.seriesData['ImageOrientationPatient'][3:6], (3,1))
+        spacing = sopInstance['PixelSpacing']
+        rowVec = np.reshape(sopInstance['ImageOrientationPatient'][0:3], (3,1))
+        colVec = np.reshape(sopInstance['ImageOrientationPatient'][3:6], (3,1))
         rowPixCoord = np.dot(polygonPatient - origin, rowVec) / spacing[1]
         colPixCoord = np.dot(polygonPatient - origin, colVec) / spacing[0]
 
         # get mask from contour
-        mask = np.zeros((self.seriesData['Rows'], self.seriesData['Columns'])).astype(bool)
-        fill_row_coords, fill_col_coords = draw.polygon(colPixCoord + self.roiShift['col'], rowPixCoord + self.roiShift['row'], (self.seriesData['Columns'], self.seriesData['Rows']))
+        mask = np.zeros((sopInstance['Rows'], sopInstance['Columns'])).astype(bool)
+        fill_row_coords, fill_col_coords = draw.polygon(colPixCoord + self.roiShift['col'], rowPixCoord + self.roiShift['row'], (sopInstance['Columns'], sopInstance['Rows']))
         mask[fill_row_coords, fill_col_coords] = True
 
         return colPixCoord, rowPixCoord, contourArea, mask
