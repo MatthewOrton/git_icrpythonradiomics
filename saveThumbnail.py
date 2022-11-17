@@ -92,3 +92,6 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
     fPlt.savefig(outputFileName,  orientation='landscape', format=format, dpi=2400)
 
     plt.close('all')
+
+    # return filenames of the image files that were displayed
+    return [imageVolume['Files'][idx] for idx in idx0]
