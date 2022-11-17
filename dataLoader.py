@@ -120,9 +120,14 @@ class dataLoader:
         if contiguousInstanceNumberCheck and (len(instanceListSteps) != 1 or instanceListSteps[0] != 1):
             raise Exception('InstanceNumber values are not consecutive for AcquisitionNumber = ' + str(AcquisitionNumber))
 
-        # Sort on InstanceNumber
-        SopInstanceList = [x for _, x in sorted(zip(InstanceNumbers, SopInstanceList))]
-        InstanceNumbers.sort()
+        # Sort on InstanceNumber if possible and on SliceLocation if not
+        if len(set(InstanceNumbers)) == len(InstanceNumbers):
+            SopInstanceList = [x for _, x in sorted(zip(InstanceNumbers, SopInstanceList))]
+            InstanceNumbers.sort()
+        elif len(set(InstanceNumbers)) == 1:
+            SliceLocationList = [x['SliceLocation'] for x in SopInstanceList]
+            SopInstanceList = [x for _, x in sorted(zip(SliceLocationList, SopInstanceList))]
+            SliceLocationList.sort()
 
         # Check SliceLocations are uniformly spaced (to a tolerance)
         SliceLocationList = [x['SliceLocation'] for x in SopInstanceList]
