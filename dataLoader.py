@@ -4,7 +4,7 @@ from skimage import draw
 
 class dataLoader:
 
-    def __init__(self, assessorFile, seriesFolderDict, maxNonCompatibleInstances=0, verbose=False, roiShift={'row':0, 'col':0}):
+    def __init__(self, assessorFile, seriesFolderDict, maxNonCompatibleInstances=0, verbose=False, roiShift={'row':0, 'col':0}, sliceLocationFromImagePositionPatient=True):
 
         if verbose:
             print('Processing ' + assessorFile)
@@ -22,6 +22,9 @@ class dataLoader:
 
         self.assessor = pydicom.dcmread(assessorFile)
         self.ReferencedSeriesUID = self.__getReferencedSeriesUID()
+
+        # this is to switch between getting sliceLocation from dicom tag with same name, or by calculating it from ImagePositionPatient tag
+        self.sliceLocationFromImagePositionPatient = sliceLocationFromImagePositionPatient
 
         self.seriesData = {}
         if verbose:
@@ -190,6 +193,7 @@ class dataLoader:
         output['image']['spacing'] = (SopInstanceList[0]['PixelSpacing'][0], SopInstanceList[0]['PixelSpacing'][1], SliceSpacing[0])
         output['image']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
         output['image']['InstanceNumbers'] = InstanceNumbers
+        output['image']['SliceLocations'] = SliceLocationList
         output['image']['Files'] = [x['File'] for x in SopInstanceList]
 
         # template code to convert to sitk image object
@@ -247,10 +251,11 @@ class dataLoader:
 
                 # Get SliceLocation directly from ImagePositionPatient and ImageOrientationPatient
                 # This is because the SliceLocation dicom tag is sometimes dodgy
-                origin = thisSopInst['ImagePositionPatient']
-                rowVec = thisSopInst['ImageOrientationPatient'][0:3]
-                colVec = thisSopInst['ImageOrientationPatient'][3:6]
-                thisSopInst['SliceLocation'] = np.dot(origin, np.cross(rowVec, colVec))
+                if self.sliceLocationFromImagePositionPatient:
+                    origin = thisSopInst['ImagePositionPatient']
+                    rowVec = thisSopInst['ImageOrientationPatient'][0:3]
+                    colVec = thisSopInst['ImageOrientationPatient'][3:6]
+                    thisSopInst['SliceLocation'] = np.dot(origin, np.cross(rowVec, colVec))
 
                 # even though SOPInstance used as key, include in value (dictionary) so we can double check matching SOPInstances later
                 thisSopInst['SOPInstanceUID'] = dcm.SOPInstanceUID
@@ -264,6 +269,9 @@ class dataLoader:
         series['SeriesInstanceUID'] = dcmCommon.SeriesInstanceUID
         series['StudyInstanceUID'] = dcmCommon.StudyInstanceUID
         series['PatientID'] = dcmCommon.PatientID
+        series['PatientName'] = str(dcmCommon.PatientName)
+        series['StudyDate'] = dcmCommon.StudyDate
+        series['SeriesTime'] = dcmCommon.SeriesTime
 
         # get any Modality-specific parameters that might be useful
         sopClassUid_CTImageStorage = '1.2.840.10008.5.1.4.1.1.2'
