@@ -517,7 +517,8 @@ class xnatDownloader:
                 # file is buried in lots of folders
                 thisFile = glob.glob(os.path.join(self.downloadPathUnzip, '**', '*.'+self.assessorStyle["format"].lower()), recursive=True) + \
                            glob.glob(os.path.join(self.downloadPathUnzip, '**', '*.'+self.assessorStyle["format"].upper()), recursive=True)
-
+                thisFile = list(set(thisFile))
+                
                 if len(thisFile) > 1:
                     for oneFile in thisFile:
                         os.remove(oneFile)
