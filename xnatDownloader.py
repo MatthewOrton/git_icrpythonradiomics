@@ -210,10 +210,10 @@ class xnatDownloader:
                 with xnat.connect(server=self.serverURL) as self.xnat_session:
                     if experimentID in self.xnat_session.projects[self.projectStr].experiments.keys():
                         xnat_experiment = self.xnat_session.projects[self.projectStr].experiments[experimentID]
-                        if scanFormat is 'ID':
+                        if scanFormat == 'ID':
                             if scanID in xnat_experiment.scans.data.keys():
                                 self.__downloadAndRenameExperimentFolder(xnat_experiment, scanID, destinFolder=destinFolder)
-                        elif scanFormat is 'scanDescription':
+                        elif scanFormat == 'scanDescription':
                             for item in xnat_experiment.scans.data.items():
                                 if scanID == item[1].type:
                                     self.__downloadAndRenameExperimentFolder(xnat_experiment, item[0], destinFolder=destinFolder)
