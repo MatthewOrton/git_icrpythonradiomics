@@ -384,7 +384,7 @@ class dataLoader:
 
         # get mask from contour
         mask = np.zeros((sopInstance['Rows'], sopInstance['Columns'])).astype(bool)
-        fill_row_coords, fill_col_coords = draw.polygon(colPixCoord + self.roiShift['col'], rowPixCoord + self.roiShift['row'], (sopInstance['Columns'], sopInstance['Rows']))
+        fill_row_coords, fill_col_coords = draw.polygon(colPixCoord.ravel() + self.roiShift['col'], rowPixCoord.ravel() + self.roiShift['row'], (sopInstance['Columns'], sopInstance['Rows']))
         mask[fill_row_coords, fill_col_coords] = True
 
         return colPixCoord, rowPixCoord, contourArea, mask
