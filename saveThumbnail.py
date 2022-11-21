@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import cv2
 import os
 
-def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[-100, 200], volumePad = [2, 20, 20], format='pdf'):
+def saveThumbnail(roiList, outputFileName, titleStr = '', cropToMask = True, showInstanceNumbers=True, showSliceLocations=False, imageGrayLevelLimits=[-100, 200], volumePad = [2, 20, 20], format='pdf'):
 
     # check all rois are linked to same image volume data
     match = True
@@ -16,8 +16,8 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
         print('Non-matching image')
     else:
         imageVolume = roiList[0]['image']
-        for roi in roiList:
-            roi.pop('image')
+        # for roi in roiList:
+        #     roi.pop('image')
 
     # get bounding box for all masks
     mask = roiList[0]['mask']['array']
@@ -27,12 +27,16 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
     axis1 = np.where(np.sum(mask.astype(int), axis=(0, 2))>0)[0]
     axis2 = np.where(np.sum(mask.astype(int), axis=(0, 1))>0)[0]
 
-    idx0 = range(max((0, axis0[0] - volumePad[0])), min((mask.shape[0], axis0[-1] + volumePad[0] + 1)))
-    idx1 = range(max((0, axis1[0] - volumePad[1])), min((mask.shape[1], axis1[-1] + volumePad[1] + 1)))
-    idx2 = range(max((0, axis2[0] - volumePad[2])), min((mask.shape[2], axis2[-1] + volumePad[2] + 1)))
+    if cropToMask:
+        idx0 = range(max((0, axis0[0] - volumePad[0])), min((mask.shape[0], axis0[-1] + volumePad[0] + 1)))
+        idx1 = range(max((0, axis1[0] - volumePad[1])), min((mask.shape[1], axis1[-1] + volumePad[1] + 1)))
+        idx2 = range(max((0, axis2[0] - volumePad[2])), min((mask.shape[2], axis2[-1] + volumePad[2] + 1)))
+    else:
+        idx0 = range(mask.shape[0])
+        idx1 = range(mask.shape[1])
+        idx2 = range(mask.shape[2])
 
     # crop image and all masks
-    instanceNumbers = np.array(imageVolume['InstanceNumbers'])[idx0]
     imageVolumeCrop = imageVolume['array'][idx0, :, :][:, idx1, :][:, :, idx2]  # this discards lots of the metadata and converts imageVolume from a dict to numpy array
     for roi in roiList:
         roi['mask'] = roi['mask']['array'][idx0,:,:][:,idx1,:][:,:,idx2]  # this discards some metadata that we don't need
@@ -47,6 +51,9 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
 
     # dummy figure so we can use contour() to get outline of the mask
     figContourDummy, axContourDummy = plt.subplots(1,1)
+
+    instanceNumbers = np.array(imageVolume['InstanceNumbers'])[idx0]
+    sliceLocations = np.array(imageVolume['SliceLocations'])[idx0]
 
     # make each image and overlay all contours on this image
     colors = ['#d62728', '#28f2ff', '#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
@@ -63,7 +70,12 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
             ax.imshow(imageVolumeCrop[slice,:,:], vmin=imageGrayLevelLimits[0], vmax=imageGrayLevelLimits[1], cmap='gray', interpolation='nearest')
 
             # box with InstanceNumber
-            ax.text(0, 1, str(instanceNumbers[slice]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
+            if showInstanceNumbers:
+                ax.text(0, 1, str(instanceNumbers[slice]), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='left', va='top')
+
+            # box with SliceLocations
+            if showSliceLocations:
+                ax.text(1, 1, str(np.round(sliceLocations[slice],2)), color='k', bbox=dict(boxstyle='square,pad=0.05', fc='white', ec='none'), fontsize=4, weight='bold', transform=ax.transAxes, ha='right', va='top')
 
             # plot all mask boundaries for this slice
             for k, roi in enumerate(roiList):
@@ -90,5 +102,9 @@ def saveThumbnail(roiList, outputFileName, titleStr = '', imageGrayLevelLimits=[
         os.makedirs(os.path.split(outputFileName)[0])
 
     fPlt.savefig(outputFileName,  orientation='landscape', format=format, dpi=2400)
+    print('Written : ' + outputFileName)
 
     plt.close('all')
+
+    # return filenames of the image files that were displayed
+    return [imageVolume['Files'][idx] for idx in idx0]
