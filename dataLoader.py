@@ -102,7 +102,7 @@ class dataLoader:
                     if todoList[n]:
                         dc0 = np.abs(np.dot(imOri[0:3], imOriTest[0:3])-1)
                         dc1 = np.abs(np.dot(imOri[3:], imOriTest[3:])-1)
-                        tol = 1e-8
+                        tol = 1e-6
                         if dc0<tol and dc1<tol:
                             imOriList[n] = imOriTest
                             todoList[n] = False
@@ -381,6 +381,9 @@ class dataLoader:
         self.seriesData['ROINames'] = segNames
 
         maskFrames = self.assessor.pixel_array
+        # make sure single slice masks have rows/cols/slices along correct dimension
+        if len(maskFrames.shape) == 2:
+            maskFrames = np.reshape(maskFrames, (1, maskFrames.shape[0], maskFrames.shape[1]))  # the dimension order needs testing!!
 
         for n, funGrpSeq in enumerate(self.assessor.PerFrameFunctionalGroupsSequence):
             thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
