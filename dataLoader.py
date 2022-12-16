@@ -38,7 +38,11 @@ class dataLoader:
         if verbose:
             print('loading contours ...', end=' ')
 
-        self.__loadRTSdata()
+        if self.assessor.SOPClassUID == '1.2.840.10008.5.1.4.1.1.481.3':
+            self.__loadRTSdata()
+
+        if self.assessor.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
+            self.__loadSEGdata()
 
         if verbose:
             print('complete.')
@@ -46,10 +50,15 @@ class dataLoader:
 
     def __getReferencedSeriesUID(self):
 
-        rfors = self.assessor.ReferencedFrameOfReferenceSequence[0]
-        rtrss = rfors.RTReferencedStudySequence[0]
-        return rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
+        if self.assessor.SOPClassUID == '1.2.840.10008.5.1.4.1.1.481.3':
+            # RT-STRUCT
+            rfors = self.assessor.ReferencedFrameOfReferenceSequence[0]
+            rtrss = rfors.RTReferencedStudySequence[0]
+            return rtrss.RTReferencedSeriesSequence[0].SeriesInstanceUID
 
+        if self.assessor.SOPClassUID == '1.2.840.10008.5.1.4.1.1.66.4':
+            # SEG
+            return self.assessor.ReferencedSeriesSequence[0].SeriesInstanceUID
 
     def __getScaledSlice(self, dcm):
 
@@ -72,6 +81,43 @@ class dataLoader:
         # Sometimes there are a small (usually 1) number that don't, e.g. one image that is a coronal reformat that shows position of axial slices.
         #
         # If the number of non-matching images is below maxSpatiallyNonCompatibleInstances then get output a list of the sopInstances to discard.
+
+        # Some scans have ImageOrientationPatient values that are the same to a tolerance (rather than exactly equal)
+        # This causes problems when performing the hash of the tags to match.
+        # Solution is to find groups of ImageOrientationPatient values that have directions within a tolerance of each other, and use
+        # the matching values locally
+        if 'ImageOrientationPatient' in self.tagsToMatch:
+            imOriList = [value['ImageOrientationPatient'] for value in sopInstDict.values()]
+
+            # initialise with first element as first element of unique list
+            imOriTest = imOriList[0]
+            todoList = [True]*len(imOriList)
+            todoList[0] = False
+            imOriTest_updated = False
+            numUniqueValues = 1
+
+            # set ImageOrientationPatient arrays exactly equal if they are within a tolerance
+            while any(todoList):
+                for n, imOri in enumerate(imOriList):
+                    if todoList[n]:
+                        dc0 = np.abs(np.dot(imOri[0:3], imOriTest[0:3])-1)
+                        dc1 = np.abs(np.dot(imOri[3:], imOriTest[3:])-1)
+                        tol = 1e-8
+                        if dc0<tol and dc1<tol:
+                            imOriList[n] = imOriTest
+                            todoList[n] = False
+                        elif not imOriTest_updated:
+                            imOriTestNew = imOri.copy()
+                            imOriTest_updated = True
+                            todoList[n] = False
+                            numUniqueValues += 1
+                if imOriTest_updated:
+                    imOriTest = imOriTestNew.copy()
+                    imOriTest_updated = False
+
+            # replace values into the original dictionary
+            for n, key in enumerate(sopInstDict.keys()):
+                sopInstDict[key]['ImageOrientationPatient'] = imOriList[n]
 
         # Generate a hash of tagsToMatch for each sopInstance and find the unique values.
         hashMeta = {key: hash(np.hstack([value[tag] for tag in self.tagsToMatch]).data.tobytes()) for key, value in sopInstDict.items()}
@@ -324,9 +370,36 @@ class dataLoader:
 
         self.seriesData = series
 
+    def __loadSEGdata(self):
+
+        # find names and labels of all segmentation objects
+        segNameDict = {}
+        segNames = []
+        for ss in self.assessor.SegmentSequence:
+            segNameDict[ss.SegmentNumber] = ss.SegmentLabel
+            segNames.append(ss.SegmentLabel)
+        self.seriesData['ROINames'] = segNames
+
+        maskFrames = self.assessor.pixel_array
+
+        for n, funGrpSeq in enumerate(self.assessor.PerFrameFunctionalGroupsSequence):
+            thisSopInstUID = funGrpSeq.DerivationImageSequence[0].SourceImageSequence[0].ReferencedSOPInstanceUID
+            thisSopInstance = self.seriesData['SOPInstanceDict'][thisSopInstUID]
+            segmentNumber = funGrpSeq.SegmentIdentificationSequence[0].ReferencedSegmentNumber
+
+            thisMask = {'FrameNumber':n,
+                        'ROIName': segNameDict[segmentNumber],
+                        'ROINumber': segmentNumber}
+
+            thisMask['Mask'] = maskFrames[n,:,:]
+            thisMask['ReferencedSOPInstanceUID'] = thisSopInstUID
+
+            thisSopInstance['MaskList'].append(thisMask)
+
 
     def __loadRTSdata(self):
 
+        # find names and labels of all ROIs
         roiNameDict = {}
         roiNames = []
         for ssr in self.assessor.StructureSetROISequence:
