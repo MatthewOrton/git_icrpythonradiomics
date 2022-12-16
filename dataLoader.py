@@ -148,12 +148,16 @@ class dataLoader:
         if ROIName not in self.seriesData['ROINames']:
             raise Exception(ROIName + ' not found!')
 
-        # Find which AcquisitionNumber the named ROI is in
+        # Find which AcquisitionNumber the named ROI is in - look in ContourList and MaskList (although will only ever be all Contours or all Masks)
         AcquisitionList = []
         for k, v in self.seriesData['SOPInstanceDict'].items():
-            if len(v['ContourList'])>0:
+            if len(v['ContourList']) > 0:
                 for contour in v['ContourList']:
                     if contour['ROIName'] == ROIName:
+                        AcquisitionList.append(v['AcquisitionNumber'])
+            if len(v['MaskList']) > 0:
+                for msk in v['MaskList']:
+                    if msk['ROIName'] == ROIName:
                         AcquisitionList.append(v['AcquisitionNumber'])
         AcquisitionNumber = list(set(AcquisitionList))
         if len(AcquisitionNumber)>1:
@@ -209,6 +213,9 @@ class dataLoader:
                         mask[n,:,:] = np.logical_or(mask[n,:,:], contour['Mask'])
                     else:
                         output['numberSmallContoursRemoved'] += 1
+            for msk in sopInst['MaskList']:
+                if msk['ROIName'] == ROIName:
+                    mask[n,:,:] = np.logical_or(mask[n,:,:], msk['Mask'])
 
         if checkMaskPresentOnContiguousSlices:
             maskSliceInds = np.unique(np.where(np.sum(mask, axis=(1,2))>0)[0])
