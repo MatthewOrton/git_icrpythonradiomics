@@ -29,7 +29,7 @@ def getSeriesUIDFolderDict(searchFolder):
         with progressbar.ProgressBar(max_value=len(files)) as bar:
             for n, file in enumerate(files):
                 if not os.path.isdir(file) and pydicom.misc.is_dicom(file):
-                    dcm = pydicom.dcmread(file)
+                    dcm = pydicom.dcmread(file, stop_before_pixels=True)
 
                     thisFolder = os.path.split(file)[0]
 

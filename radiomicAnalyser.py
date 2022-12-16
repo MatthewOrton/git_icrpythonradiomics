@@ -243,7 +243,7 @@ class radiomicAnalyser:
         dataMaskTrain = dataMask[0::skip,:]
 
         # Fit Gaussian mixture model to reference data dataMask.
-        if flavour is 'Bayesian':
+        if flavour == 'Bayesian':
             # With Bayesian model the prior acts to regularise the mixture model, i.e. only
             # a "sensible" number of components will have non-negligible
             # weights, so the mixture model will be parsimonious.  The
