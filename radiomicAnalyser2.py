@@ -255,6 +255,8 @@ class radiomicAnalyser2:
         thisROI['image']['origin'] = tuple(SopInstanceList[0]['ImagePositionPatient'])
         thisROI['image']['spacing'] = (SopInstanceList[0]['PixelSpacing'][0], SopInstanceList[0]['PixelSpacing'][1], thisROI['sliceSpacing'])
         thisROI['image']['direction'] = tuple(np.hstack((rowVec, colVec, np.cross(rowVec, colVec))))
+        thisROI['image']['WindowCenter'] = SopInstanceList[0]['WindowCenter']
+        thisROI['image']['WindowWidth'] = SopInstanceList[0]['WindowWidth']
         thisROI['image']['InstanceNumbers'] = InstanceNumbers
         thisROI['image']['SliceLocations'] = [x['SliceLocation'] for x in SopInstanceList]
         thisROI['image']['Files'] = [x['File'] for x in SopInstanceList]
@@ -305,6 +307,8 @@ class radiomicAnalyser2:
                         thisSopInst['SliceThickness'] = float(dcm.SliceThickness)
                 else:
                     thisSopInst['SliceThickness'] = 0.0
+                thisSopInst['WindowCenter'] = dcm.WindowCenter
+                thisSopInst['WindowWidth'] = dcm.WindowWidth
 
                 # Get SliceLocation directly from ImagePositionPatient and ImageOrientationPatient
                 # This is because the SliceLocation dicom tag is sometimes dodgy
@@ -686,7 +690,7 @@ class radiomicAnalyser2:
 
 
 def saveThumbnail(roiList, outputFileName, titleStr='', cropToMask=True, showInstanceNumbers=True,
-                  showSliceLocations=False, imageGrayLevelLimits=[-100, 200], volumePad=[2, 20, 20], format='pdf'):
+                  showSliceLocations=False, imageGrayLevelLimits=None, volumePad=[2, 20, 20], format='pdf'):
 
     # check all rois are linked to same image volume data
     match = True
@@ -699,8 +703,11 @@ def saveThumbnail(roiList, outputFileName, titleStr='', cropToMask=True, showIns
         print('Non-matching image')
     else:
         imageVolume = roiList[0]['image']
-        # for roi in roiList:
-        #     roi.pop('image')
+
+    # set default image gray level limits if none input
+    if imageGrayLevelLimits is None:
+        imageGrayLevelLimits = [imageVolume['WindowCenter'] - 0.5*imageVolume['WindowWidth'],
+                                imageVolume['WindowCenter'] + 0.5*imageVolume['WindowWidth']]
 
     # get bounding box for all masks
     mask = roiList[0]['mask']['array']
